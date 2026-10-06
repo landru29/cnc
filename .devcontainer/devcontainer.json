@@ -1,0 +1,31 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/go-postgres
+{
+	"name": "graph",
+	"dockerComposeFile": "docker-compose.yaml",
+	"service": "dev",
+	"workspaceFolder": "/workspace",
+	"shutdownAction": "none",
+	// Configure tool-specific properties.
+	"customizations": {
+		// Configure properties specific to VS Code.
+		"vscode": {
+			// Set *default* container specific settings.json values on container create.
+			"settings": {
+				"terminal.integrated.profiles.linux": {
+					"zsh": {
+						"path": "zsh",
+						"args": ["-l"]
+					}
+				},
+				"terminal.integrated.defaultProfile.linux": "zsh"
+			},
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [
+				"vadimcn.vscode-lldb",
+				"rust-lang.rust-analyzer"
+			]
+		}
+	},
+	"postStartCommand": ["/workspace/.devcontainer/post-create.sh"],
+}
