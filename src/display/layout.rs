@@ -7,26 +7,28 @@ use ratatui::{
     DefaultTerminal, Frame,
 };
 
+use crossterm::event::KeyModifiers;
+
+use crate::grbl::{program::Program, status::{RealTime}};
+
 struct App {
-    gcode: Vec<String>,
-    current_line: usize,
+    gcode: Program,
     log: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
-    pos: [f32; 3],
-    state: &'static str,
+    status: RealTime,
+    end_of_program_reached: bool,
 }
 
 impl App {
-    fn new(gcode: Vec<String>) -> Self {
+    fn new(gcode: Program) -> Self {
         Self {
             gcode,
-            current_line: 3,
             log: vec![],
             to_cnc: vec![],
             input: String::new(),
-            pos: [0.0; 3],
-            state: "WAITING",
+            status: RealTime::default(),
+            end_of_program_reached:false,
         }
     }
 
@@ -44,8 +46,13 @@ impl App {
 
         // Status bar
         let status = Line::from(format!(
-            "ABS     {}     X: {:+08.2}      Y: {:+08.2}      Z: {:+08.2}",
-            self.state, self.pos[0], self.pos[1], self.pos[2]
+            "ABS     {}     {}",
+            self.status
+                .state
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
+            self.status.position(),
         ));
         f.render_widget(Paragraph::new(status), rows[0]);
 
@@ -63,20 +70,22 @@ impl App {
             cols[0],
         );
 
-        let lines: Vec<Line> = self
+        let (viewport, cursor_in_viewport) = self
             .gcode
+            .clone()
+            .viewport(rows[1].height as usize - 2);
+        
+        let lines: Vec<Line> = viewport
             .iter()
             .enumerate()
             .map(|(i, l)| {
                 let mut rendered_line = l.clone();
-                if i == self.current_line {
-                    if rendered_line.trim().is_empty() || rendered_line.trim().starts_with(';') || rendered_line.trim().starts_with('%') || rendered_line.trim().starts_with('(') {
-                        self.current_line = self.current_line + 1;
-                    } else {
-                        rendered_line = format!("> {}", rendered_line);
-                    }
+                if !self.end_of_program_reached && i == cursor_in_viewport {
+                    rendered_line = format!("> {}", rendered_line);
+                } else if i == cursor_in_viewport {
+                    rendered_line = format!("█ {}", rendered_line);
                 }
-                let style = if i == self.current_line {
+                let style = if i == cursor_in_viewport {
                     Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
                 } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
                     Style::default().fg(Color::Green)
@@ -120,24 +129,28 @@ impl App {
                 if k.kind != KeyEventKind::Press {
                     continue;
                 }
-                match k.code {
-                    KeyCode::Esc => return Ok(()),
-                    KeyCode::Enter => {
+                match (k.code, k.modifiers) {
+                    (KeyCode::Enter, KeyModifiers::NONE) => {
                         let cmd = std::mem::take(&mut self.input);
                         if !cmd.is_empty() {
-                            if cmd.to_lowercase() == "exit" {
+                            if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
                                 return Ok(());
                             } else if cmd.to_lowercase() == "p" {
-                                self.current_line = self.current_line + 1;
+                                if !self.end_of_program_reached && let Err(_) = self.gcode.process(1) {
+                                    self.end_of_program_reached = true;
+                                }
                             } else {
                                 self.to_cnc.push(format!("> {cmd}"));
                             }
                         }
                     }
-                    KeyCode::Backspace => {
+                    (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
+                        return Ok(());
+                    }
+                    (KeyCode::Backspace, KeyModifiers::NONE) => {
                         self.input.pop();
                     }
-                    KeyCode::Char(c) => self.input.push(c),
+                    (KeyCode::Char(c), KeyModifiers::NONE) => self.input.push(c),
                     _ => {}
                 }
             }
@@ -145,7 +158,7 @@ impl App {
     }
 }
 
-pub fn display(gcode: Vec<String>) -> std::io::Result<()> {
+pub fn display(gcode: Program) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     
 

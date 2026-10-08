@@ -13,3 +13,4 @@ for i in {1..20}; do
 done
 
 echo "done."
+sleep infinity

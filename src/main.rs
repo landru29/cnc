@@ -4,6 +4,7 @@ mod display;
 use clap::Parser;
 use anyhow::Result;
 use display::layout::display;
+use grbl::program::Program;
 
 #[derive(Parser)]
 #[command(name = "workspace")]
@@ -32,7 +33,7 @@ fn main() -> Result<()> {
 
     let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
-    display(gcode)?;
+    display(Program::new(gcode))?;
 
     Ok(())
 }

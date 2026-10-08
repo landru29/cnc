@@ -1,21 +1,106 @@
+use std::fmt;
+use std::str::FromStr;
+use std::ops::Add;
+use super::position::Position;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
     Ok,
     Error(u8),
     Alarm(u8),
     Message(String),
     Feed(u32),
-    RealTime(Vec<RealTime>),
+    RealTime(RealTime),
 }
 
-pub enum RealTime {
-    State(State),
-    MachinePosition(i32, i32, i32),
-    WorkPosition(i32, i32, i32),
-    WorkCoordinateOffset(i32, i32, i32),
-    LineNumber(u32),
-    Buffer(u32, u32),
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StatusError {
+    /// The line does not look like `<...|...>`.
+    NotAStatus,
+    /// Unknown or malformed parts.
+    UnknownWord(String),
+    /// A known field has an invalid value.
+    Malformed(String),
 }
 
+impl fmt::Display for StatusError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NotAStatus => write!(f, "unrecognized line (expected `<...|...>`)"),
+            Self::UnknownWord(w) => write!(f, "unknown or invalid word: `{w}`"),
+            Self::Malformed(w) => write!(f, "malformed value: `{w}`"),
+        }
+    }
+}
+
+impl std::error::Error for StatusError {}
+
+
+impl FromStr for Status {
+    type Err = StatusError;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let data = line.trim();
+        if data == "ok" {
+            Ok(Status::Ok)
+        } else if data.starts_with("error:") {
+            let code = data[6..]
+                .trim()
+                .parse::<u8>()
+                .map_err(|_| StatusError::Malformed(data.to_string()))?;
+            Ok(Status::Error(code))
+        } else if data.starts_with("ALARM:") {
+            let code = data[6..]
+                .trim()
+                .parse::<u8>()
+                .map_err(|_| StatusError::Malformed(data.to_string()))?;
+            Ok(Status::Alarm(code))
+        } else if data.starts_with("MSG:") {
+            let message = data[4..].trim().to_string();
+            Ok(Status::Message(message))
+        } else if data.starts_with("F:") {
+            let feed = data[2..]
+                .trim()
+                .parse::<u32>()
+                .map_err(|_| StatusError::Malformed(data.to_string()))?;
+            Ok(Status::Feed(feed))
+        } else if data.starts_with('<') && data.ends_with('>') {
+            Ok(Status::RealTime(data.parse()?))
+        } else {
+            Err(StatusError::NotAStatus)
+        }
+    }
+}
+
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RealTime {
+    pub state: Option<State>,
+    pub machine_position: Option<Position>,
+    pub work_position: Option<Position>,
+    pub work_coordinate_offset: Option<Position>,
+    pub line_number: Option<u32>,
+    pub buffer: Option<(u32, u32)>,
+}
+
+impl RealTime {
+    pub fn position(&self) -> Position {
+        if let Some(pos) = &self.machine_position {
+            return pos.clone();
+        }
+
+        if let Some(wpos) = &self.work_position && let Some(offset) = &self.work_coordinate_offset {
+            return wpos.clone() + offset.clone();
+        }
+
+        Position::default()
+    }
+}
+
+
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     Idle,
     Run,
@@ -28,118 +113,140 @@ pub enum State {
     Sleep,
 }
 
-impl Status {
-    pub fn new(data: &str) -> Option<Status> {
-        let data = data.trim();
-        if data.starts_with("ok") {
-            Some(Status::Ok)
-        } else if data.starts_with("error:") {
-            let code = data[6..].trim().parse::<u8>().ok()?;
-            Some(Status::Error(code))
-        } else if data.starts_with("ALARM:") {
-            let code = data[6..].trim().parse::<u8>().ok()?;
-            Some(Status::Alarm(code))
-        } else if data.starts_with("MSG:") {
-            let message = data[4..].trim().to_string();
-            Some(Status::Message(message))
-        } else if data.starts_with("F:") {
-            let feed = data[2..].trim().parse::<u32>().ok()?;
-            Some(Status::Feed(feed))
-        } else if data.starts_with("<") && data.ends_with(">") {
-            Some(Status::RealTime(RealTime::new(data)))
-        } else {
-            None
+impl fmt::Display for State {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Idle => write!(f, "Idle"),
+            Self::Run => write!(f, "Run"),
+            Self::Hold => write!(f, "Hold"),
+            Self::Jog => write!(f, "Jog"),
+            Self::Alarm => write!(f, "Alarm"),
+            Self::Door => write!(f, "Door"),
+            Self::Check => write!(f, "Check"),
+            Self::Home => write!(f, "Home"),
+            Self::Sleep => write!(f, "Sleep"),
         }
     }
 }
 
-impl RealTime {
-    pub fn new(data: &str) -> Vec<RealTime> {
-        let data = data.trim();
-        let mut result = Vec::new();
 
-        if !(data.starts_with("<") && data.ends_with(">")) {
-            return result;
+impl Add for RealTime {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            state: if other.state == None {self.state} else {other.state},
+            machine_position: if other.machine_position == None {self.machine_position} else {other.machine_position},
+            work_position: if other.work_position == None {self.work_position} else {other.work_position},
+            work_coordinate_offset: if other.work_coordinate_offset == None {self.work_coordinate_offset} else {other.work_coordinate_offset},
+            line_number: if other.line_number == None {self.line_number} else {other.line_number},
+            buffer: if other.buffer == None {self.buffer} else {other.buffer},
+        }
+    }
+}
+
+
+impl Default for RealTime {
+    fn default() -> Self {
+        Self {
+            state: None,
+            machine_position: None,
+            work_position: None,
+            work_coordinate_offset: None,
+            line_number: None,
+            buffer: None,
+        }
+    }
+}
+
+impl FromStr for RealTime {
+    type Err = StatusError;
+
+    fn from_str(line: &str) -> Result<Self, Self::Err> {
+        let data = line.trim();
+        if !(data.starts_with('<') && data.ends_with('>')) {
+            return Err(StatusError::NotAStatus);
         }
 
         let content = &data[1..data.len() - 1];
-        let parts: Vec<&str> = content.split('|').collect();
+        let mut rt = RealTime::default();
 
-        for part in parts {
-            if part.starts_with("MPos:") {
-                let coords: Vec<&str> = part[5..].split(',').collect();
-                if coords.len() == 3 {
-                    if let (Ok(x), Ok(y), Ok(z)) = (
-                        coords[0].parse::<i32>(),
-                        coords[1].parse::<i32>(),
-                        coords[2].parse::<i32>(),
-                    ) {
-                        result.push(RealTime::MachinePosition(x, y, z));
-                    }
+        for part in content.split('|') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            if let Some(coords) = part.strip_prefix("MPos:") {
+                rt.machine_position = Some(parse_coords(coords)?);
+            } else if let Some(coords) = part.strip_prefix("WPos:") {
+                rt.work_position = Some(parse_coords(coords)?);
+            } else if let Some(coords) = part.strip_prefix("WCO:") {
+                rt.work_coordinate_offset = Some(parse_coords(coords)?);
+            } else if let Some(value) = part.strip_prefix("Ln:") {
+                rt.line_number = Some(
+                    value
+                        .trim()
+                        .parse::<u32>()
+                        .map_err(|_| StatusError::Malformed(part.to_string()))?,
+                );
+            } else if let Some(value) = part.strip_prefix("Buf:") {
+                let values: Vec<&str> = value.split(',').collect();
+                if values.len() != 2 {
+                    return Err(StatusError::Malformed(part.to_string()));
                 }
-            } else if part.starts_with("WPos:") {
-                let coords: Vec<&str> = part[5..].split(',').collect();
-                if coords.len() == 3 {
-                    if let (Ok(x), Ok(y), Ok(z)) = (
-                        coords[0].parse::<i32>(),
-                        coords[1].parse::<i32>(),
-                        coords[2].parse::<i32>(),
-                    ) {
-                        result.push(RealTime::WorkPosition(x, y, z));
-                    }
-                }
-            } else if part.starts_with("WCO:") {
-                let coords: Vec<&str> = part[4..].split(',').collect();
-                if coords.len() == 3 {
-                    if let (Ok(x), Ok(y), Ok(z)) = (
-                        coords[0].parse::<i32>(),
-                        coords[1].parse::<i32>(),
-                        coords[2].parse::<i32>(),
-                    ) {
-                        result.push(RealTime::WorkCoordinateOffset(x, y, z));
-                    }
-                }
-            } else if part.starts_with("Ln:") {
-                if let Ok(line_number) = part[3..].parse::<u32>() {
-                    result.push(RealTime::LineNumber(line_number));
-                }
-            } else if part.starts_with("Buf:") {
-                let values: Vec<&str> = part[4..].split(',').collect();
-                if values.len() == 2 {
-                    if let (Ok(available), Ok(used)) = (
-                        values[0].parse::<u32>(),
-                        values[1].parse::<u32>(),
-                    ) {
-                        result.push(RealTime::Buffer(available, used));
-                    }
-                }
-            } else if part == "Idle"
-                || part == "Run"
-                || part == "Hold"
-                || part == "Jog"
-                || part == "Alarm"
-                || part == "Door"
-                || part == "Check"
-                || part == "Home"
-                || part == "Sleep"
-            {
-                let state = match part {
-                    "Idle" => State::Idle,
-                    "Run" => State::Run,
-                    "Hold" => State::Hold,
-                    "Jog" => State::Jog,
-                    "Alarm" => State::Alarm,
-                    "Door" => State::Door,
-                    "Check" => State::Check,
-                    "Home" => State::Home,
-                    "Sleep" => State::Sleep,
-                    _ => unreachable!(),
-                };
-                result.push(RealTime::State(state));
+                let available = values[0]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                let used = values[1]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                rt.buffer = Some((available, used));
+            } else if let Some(state) = parse_state(part) {
+                rt.state = Some(state);
+            } else {
+                return Err(StatusError::UnknownWord(part.to_string()));
             }
         }
 
-        result
+        Ok(rt)
+    }
+}
+
+fn parse_coords(s: &str) -> Result<Position, StatusError> {
+    let coords: Vec<&str> = s.split(',').collect();
+    if coords.len() != 3 {
+        return Err(StatusError::Malformed(s.to_string()));
+    }
+    let x = coords[0]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| StatusError::Malformed(s.to_string()))?;
+    let y = coords[1]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| StatusError::Malformed(s.to_string()))?;
+    let z = coords[2]
+        .trim()
+        .parse::<f64>()
+        .map_err(|_| StatusError::Malformed(s.to_string()))?;
+    Ok(Position{x, y, z})
+}
+
+fn parse_state(part: &str) -> Option<State> {
+    match part {
+        "Idle" => Some(State::Idle),
+        "Run" => Some(State::Run),
+        "Hold" => Some(State::Hold),
+        "Jog" => Some(State::Jog),
+        "Alarm" => Some(State::Alarm),
+        "Door" => Some(State::Door),
+        "Check" => Some(State::Check),
+        "Home" => Some(State::Home),
+        "Sleep" => Some(State::Sleep),
+        _ => None,
     }
 }
 
@@ -149,64 +256,104 @@ mod tests {
 
     #[test]
     fn parses_real_time_status() {
-        let status = RealTime::new(
-            "<Idle|MPos:10,20,30|WPos:1,2,3|WCO:4,5,6|Ln:42|Buf:7,8>",
-        );
+        let status: RealTime =
+            "<Idle|MPos:10,20,30|WPos:1,2,3|WCO:4,5,6|Ln:42|Buf:7,8>".parse().unwrap();
 
-        assert!(matches!(
-            status.as_slice(),
-            [
-                RealTime::State(State::Idle),
-                RealTime::MachinePosition(10, 20, 30),
-                RealTime::WorkPosition(1, 2, 3),
-                RealTime::WorkCoordinateOffset(4, 5, 6),
-                RealTime::LineNumber(42),
-                RealTime::Buffer(7, 8),
-            ]
-        ));
+        assert_eq!(
+            status,
+            RealTime {
+                state: Some(State::Idle),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0}),
+                work_position: Some(Position{x:1.0, y:2.0, z:3.0}),
+                work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0}),
+                line_number: Some(42),
+                buffer: Some((7, 8)),
+            }
+        );
     }
 
     #[test]
-    fn ignores_invalid_real_time_fields() {
-        let status = RealTime::new("<Idle|MPos:bad|Buf:bad,2>");
-
-        assert!(matches!(status.as_slice(), [RealTime::State(State::Idle)]));
+    fn rejects_invalid_real_time_fields() {
+        assert!(matches!(
+            "<Idle|MPos:bad|Buf:bad,2>".parse::<RealTime>(),
+            Err(StatusError::Malformed(_))
+        ));
+        assert!(matches!(
+            "<Idle|Bogus:1>".parse::<RealTime>(),
+            Err(StatusError::UnknownWord(_))
+        ));
+        assert!(matches!(
+            "not a status".parse::<RealTime>(),
+            Err(StatusError::NotAStatus)
+        ));
     }
 
     #[test]
     fn parses_status_variants() {
-        assert!(matches!(Status::new("ok"), Some(Status::Ok)));
-        assert!(matches!(Status::new("error:12"), Some(Status::Error(12))));
-        assert!(matches!(Status::new("ALARM:4"), Some(Status::Alarm(4))));
+        assert!(matches!("ok".parse(), Ok(Status::Ok)));
+        assert!(matches!("error:12".parse(), Ok(Status::Error(12))));
+        assert!(matches!("ALARM:4".parse(), Ok(Status::Alarm(4))));
         assert!(matches!(
-            Status::new("MSG:hello world"),
-            Some(Status::Message(message)) if message == "hello world"
+            "MSG:hello world".parse(),
+            Ok(Status::Message(message)) if message == "hello world"
         ));
-        assert!(matches!(Status::new("F:123"), Some(Status::Feed(123))));
+        assert!(matches!("F:123".parse(), Ok(Status::Feed(123))));
         assert!(matches!(
-            Status::new("<Idle|MPos:10,20,30>"),
-            Some(Status::RealTime(items)) if matches!(items.as_slice(), [
-                RealTime::State(State::Idle),
-                RealTime::MachinePosition(10, 20, 30),
-            ])
+            "<Idle|MPos:10,20,30>".parse(),
+            Ok(Status::RealTime(rt)) if rt == RealTime {
+                state: Some(State::Idle),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0}),
+                work_position: None,
+                work_coordinate_offset: None,
+                line_number: None,
+                buffer: None,
+            }
         ));
     }
 
     #[test]
-    fn ignores_invalid_status_inputs() {
-        assert!(Status::new("").is_none());
-        assert!(Status::new("error:abc").is_none());
-        assert!(Status::new("ALARM:999").is_none());
+    fn rejects_invalid_status_inputs() {
+        assert!(matches!("".parse::<Status>(), Err(StatusError::NotAStatus)));
         assert!(matches!(
-            Status::new("MSG:"),
-            Some(Status::Message(message)) if message.is_empty()
+            "error:abc".parse::<Status>(),
+            Err(StatusError::Malformed(_))
         ));
-        assert!(Status::new("F:abc").is_none());
         assert!(matches!(
-            Status::new("<Idle|MPos:bad>"),
-            Some(Status::RealTime(items)) if matches!(items.as_slice(), [
-                RealTime::State(State::Idle),
-            ])
+            "ALARM:999".parse::<Status>(),
+            Err(StatusError::Malformed(_))
+        ));
+        assert!(matches!(
+            "MSG:".parse::<Status>(),
+            Ok(Status::Message(message)) if message.is_empty()
+        ));
+        assert!(matches!(
+            "F:abc".parse::<Status>(),
+            Err(StatusError::Malformed(_))
+        ));
+        assert!(matches!(
+            "<Idle|MPos:bad>".parse::<Status>(),
+            Err(StatusError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn parses_statuses_from_str() {
+        let status: Status = "<Idle|MPos:1,2,3>".parse().unwrap();
+        assert!(matches!(
+            status,
+            Status::RealTime(rt) if rt == RealTime {
+                state: Some(State::Idle),
+                machine_position: Some(Position{x:1.0, y:2.0, z:3.0}),
+                work_position: None,
+                work_coordinate_offset: None,
+                line_number: None,
+                buffer: None,
+            }
+        ));
+
+        assert!(matches!(
+            "garbage".parse::<Status>(),
+            Err(StatusError::NotAStatus)
         ));
     }
 }
