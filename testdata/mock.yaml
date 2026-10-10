@@ -1,0 +1,8 @@
+default: ok
+specs:
+  - when: '?'
+    then: <Run|MPos:10.250,20.500,-1.000|WPos:10.250,20.500,-1.000|FS:500,0>
+  - when: $G
+    then: |
+      [GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]
+      ok

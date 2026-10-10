@@ -2,11 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Rust app",
+      "name": "CNC",
       "type": "lldb",
       "request": "launch",
-      "program": "${workspaceFolder}/target/debug/${workspaceFolderBasename}",
-      "args": [],
+      "preLaunchTask": "rust: cargo build",
+      "program": "${workspaceFolder}/target/debug/cnc",
+      "args": ["--port", "/tmp/ttyV1", "${workspaceFolder}/testdata/example.gcode"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "stopOnEntry": false,

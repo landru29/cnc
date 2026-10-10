@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zsh \
     sudo \
     socat \
+    psmisc \
     git
 
 RUN groupadd --gid 1000 vscode \
@@ -12,9 +13,15 @@ RUN groupadd --gid 1000 vscode \
     && mkdir -p /workspace /go \
     && chown -R vscode:vscode /workspace /go
 
+RUN printf 'vscode ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/vscode \
+    && chmod 0440 /etc/sudoers.d/vscode \
+    && visudo -cf /etc/sudoers.d/vscode
+
+
 USER vscode
 ENV PATH="/go/bin:${PATH}"
 WORKDIR /workspace
 
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended --skip-chsh
 
+RUN rustup component add rustfmt
