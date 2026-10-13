@@ -2,7 +2,7 @@ release:
 	cargo build --release
 
 mock-uart:
-	cargo run --release --bin mock -- -c testdata/mock.yaml -p /tmp/ttyV0
+	cargo run --release --bin mock -- -c testdata/fluidnc.yaml -p /tmp/ttyV0
 
 release-uart:
 	sudo fuser -k -TERM /tmp/ttyV0

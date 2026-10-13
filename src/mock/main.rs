@@ -30,7 +30,7 @@ struct Config {
 #[derive(Deserialize)]
 struct Spec {
     when: String,
-    then: String,
+    then: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -38,6 +38,10 @@ fn main() -> Result<()> {
 
     let config_text = std::fs::read_to_string(&cli.config)?;
     let config: Config = serde_yaml::from_str(&config_text)?;
+
+    for spec in &config.specs {
+        println!("catching: {}", spec.when);
+    }
 
     println!("using config {}", cli.config);
     println!("using port {}", cli.port);
@@ -69,6 +73,9 @@ fn main() -> Result<()> {
 
     let mut input = Vec::new();
     let mut bytes = [0_u8; 256];
+
+    let mut iteration: u64 = 0;
+
     while !shutdown.load(Ordering::Relaxed) {
         match uart.read(&mut bytes) {
             Ok(0) => continue,
@@ -76,13 +83,17 @@ fn main() -> Result<()> {
                 for byte in &bytes[..count] {
                     if *byte == b'\r' || *byte == b'\n' {
                         if !input.is_empty() {
-                            respond(&mut uart, &config, &input)?;
+                            println!("iteration {}", iteration);
+                            respond(&mut uart, &config, &input, iteration)?;
+                            iteration += 1;
                             input.clear();
                         }
                     } else {
                         input.push(*byte);
                         if input.len() == 1 && has_match(&config, &input) {
-                            respond(&mut uart, &config, &input)?;
+                            println!("iteration {}", iteration);
+                            respond(&mut uart, &config, &input, iteration)?;
+                            iteration += 1;
                             input.clear();
                         }
                     }
@@ -103,18 +114,47 @@ fn main() -> Result<()> {
 }
 
 fn has_match(config: &Config, request: &[u8]) -> bool {
-    config.specs.iter().any(|spec| spec.when.as_bytes() == request)
+    config.specs.iter().any(|spec| {
+        match_when(spec.when.as_bytes(), request)
+    })
 }
 
-fn respond<W: Write>(uart: &mut W, config: &Config, request: &[u8]) -> Result<()> {
+fn match_when(from: &[u8], to: &[u8]) -> bool {
+    if let Some(hex) = from.strip_prefix(b"0x") {
+        if to.len() != 1 {
+            return false;
+        }
+
+        if let Some(value) = std::str::from_utf8(hex)
+            .ok()
+            .and_then(|hex|{
+                u8::from_str_radix(hex, 16).ok()
+            }) {
+                return value == to[0];
+            } else {
+                return false;
+            }
+    } else {
+        from.eq_ignore_ascii_case(to)
+    }
+}
+
+fn respond<W: Write>(uart: &mut W, config: &Config, request: &[u8], iteration: u64) -> Result<()> {
     let request = String::from_utf8_lossy(request);
     println!(" < request: {}", request);
 
     let response = config
         .specs
         .iter()
-        .find(|spec| spec.when.to_lowercase() == request.to_lowercase())
-        .map_or(&config.default, |spec| &spec.then);
+        .find(|spec| match_when(spec.when.as_bytes(), request.as_bytes()))
+        .map_or(&config.default, |spec| {
+            if spec.then.is_empty() {
+                &config.default
+            } else {
+                let idx: usize = (iteration as usize) % spec.then.len();
+                &spec.then[idx]
+            }
+        });
 
     println!(" > response: {}", response);
 
@@ -132,19 +172,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn match_when_handles_text_and_hex_bytes_without_panicking() {
+        assert!(match_when(b"$G", b"$g"));
+        assert!(match_when(b"0x08", b"\x08"));
+        assert!(!match_when(b"0xgg", b"\x08"));
+        assert!(!match_when(b"0x08", b"\x08\x09"));
+    }
+
+    #[test]
     fn sample_config_replies_to_matching_and_unknown_requests() {
-        let config: Config = serde_yaml::from_str(include_str!("../../testdata/mock.yaml")).unwrap();
+        let config: Config = serde_yaml::from_str(include_str!("../../testdata/fluidnc.yaml")).unwrap();
         let mut response = Vec::new();
 
-        respond(&mut response, &config, b"?").unwrap();
+        respond(&mut response, &config, b"?", 0).unwrap();
         assert_eq!(response, b"<Run|MPos:10.250,20.500,-1.000|WPos:10.250,20.500,-1.000|FS:500,0>\n");
 
         response.clear();
-        respond(&mut response, &config, b"$G").unwrap();
+        respond(&mut response, &config, b"$G", 0).unwrap();
         assert_eq!(response, b"[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]\nok\n");
 
         response.clear();
-        respond(&mut response, &config, b"unknown").unwrap();
+        respond(&mut response, &config, b"unknown", 0).unwrap();
         assert_eq!(response, b"ok\n");
     }
 }
