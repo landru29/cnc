@@ -6,22 +6,23 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     DefaultTerminal, Frame,
 };
-
+use std::sync::mpsc::{Receiver, Sender};
 use crossterm::event::KeyModifiers;
-
 use crate::grbl::{program::Program, status::{RealTime}};
 
-struct App {
+struct App<'a> {
     gcode: Program,
     log: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
     status: RealTime,
     end_of_program_reached: bool,
+    rx: &'a Receiver<Vec<String>>,
+    tx: &'a Sender<Vec<String>>,
 }
 
-impl App {
-    fn new(gcode: Program) -> Self {
+impl<'a> App<'a> {
+    fn new(serial_rx: &'a Receiver<Vec<String>>, serial_tx: &'a Sender<Vec<String>>, gcode: Program) -> Self {
         Self {
             gcode,
             log: vec![],
@@ -29,6 +30,23 @@ impl App {
             input: String::new(),
             status: RealTime::default(),
             end_of_program_reached:false,
+            rx: serial_rx,
+            tx: serial_tx,
+        }
+    }
+
+    fn send_command(&mut self, cmd: String) {
+        if !cmd.is_empty() {
+            if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
+                std::process::exit(0);
+            } else if cmd.to_lowercase() == "p" {
+                if !self.end_of_program_reached && let Err(_) = self.gcode.process(1) {
+                    self.end_of_program_reached = true;
+                }
+            } else {
+                self.to_cnc.push(format!("> {cmd}"));
+                self.tx.send(vec![cmd]).expect("Failed to send command to serial port");
+            }
         }
     }
 
@@ -132,17 +150,7 @@ impl App {
                 match (k.code, k.modifiers) {
                     (KeyCode::Enter, KeyModifiers::NONE) => {
                         let cmd = std::mem::take(&mut self.input);
-                        if !cmd.is_empty() {
-                            if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
-                                return Ok(());
-                            } else if cmd.to_lowercase() == "p" {
-                                if !self.end_of_program_reached && let Err(_) = self.gcode.process(1) {
-                                    self.end_of_program_reached = true;
-                                }
-                            } else {
-                                self.to_cnc.push(format!("> {cmd}"));
-                            }
-                        }
+                        self.send_command(cmd);
                     }
                     (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                         return Ok(());
@@ -158,11 +166,11 @@ impl App {
     }
 }
 
-pub fn display(gcode: Program) -> std::io::Result<()> {
+pub fn display(serial_rx: &Receiver<Vec<String>>, serial_tx: &Sender<Vec<String>>, gcode: Program) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     
 
-    let mut application = App::new(gcode);
+    let mut application = App::new(serial_rx, serial_tx, gcode);
 
 
     let res = application.run(&mut terminal);

@@ -17,6 +17,9 @@ struct Cli {
 
     #[arg(short = 'p', long, default_value_t = "/dev/ttyUSB0".to_string())]
     port: String,
+
+    #[arg(short = 'b', long, default_value_t = 115200)]
+    baudrate: u32,
 }
 
 #[derive(Deserialize)]
@@ -45,9 +48,10 @@ fn main() -> Result<()> {
 
     println!("using config {}", cli.config);
     println!("using port {}", cli.port);
+    print!("baudrate: {}", cli.baudrate);
     println!("press Ctrl+C or Ctrl+D to exit");
 
-    let mut uart = serialport::new(&cli.port, 115_200)
+    let mut uart = serialport::new(&cli.port, cli.baudrate)
         .timeout(Duration::from_millis(100))
         .open()?;
 
