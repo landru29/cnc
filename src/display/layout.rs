@@ -17,12 +17,12 @@ struct App<'a> {
     input: String,
     status: RealTime,
     end_of_program_reached: bool,
-    rx: &'a Receiver<Vec<String>>,
-    tx: &'a Sender<Vec<String>>,
+    rx: &'a Receiver<String>,
+    tx: &'a Sender<String>,
 }
 
 impl<'a> App<'a> {
-    fn new(serial_rx: &'a Receiver<Vec<String>>, serial_tx: &'a Sender<Vec<String>>, gcode: Program) -> Self {
+    fn new(serial_rx: &'a Receiver<String>, serial_tx: &'a Sender<String>, gcode: Program) -> Self {
         Self {
             gcode,
             log: vec![],
@@ -45,7 +45,7 @@ impl<'a> App<'a> {
                 }
             } else {
                 self.to_cnc.push(format!("> {cmd}"));
-                self.tx.send(vec![cmd]).expect("Failed to send command to serial port");
+                self.tx.send(cmd).expect("Failed to send command to serial port");
             }
         }
     }
@@ -166,7 +166,7 @@ impl<'a> App<'a> {
     }
 }
 
-pub fn display(serial_rx: &Receiver<Vec<String>>, serial_tx: &Sender<Vec<String>>, gcode: Program) -> std::io::Result<()> {
+pub fn display(serial_rx: &Receiver<String>, serial_tx: &Sender<String>, gcode: Program) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     
 

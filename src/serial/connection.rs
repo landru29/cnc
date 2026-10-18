@@ -4,16 +4,19 @@ use std::time::Duration;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 pub struct Client {
-    pub tx: Sender<Vec<String>>,
-    pub rx: Receiver<Vec<String>>,
+    pub rx: Receiver<String>,
+    pub tx: Sender<String>,
     pub port: Option<Box<dyn serialport::SerialPort>>,
     running: Arc<AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
+    command_rx: Option<Receiver<String>>,
+    serial_tx: Sender<String>,
 }
 
 impl Client {
     pub fn new(path: &str, baudrate: u32) -> Result<Self> {
-        let (tx, rx) = channel::<Vec<String>>();
+        let (serial_tx, rx) = channel::<String>();
+        let (tx, command_rx) = channel::<String>();
 
         let port = serialport::new(path, baudrate)
             .timeout(Duration::from_millis(100))
@@ -21,11 +24,21 @@ impl Client {
 
         let running = Arc::new(AtomicBool::new(true));
 
-        Ok(Self { tx, rx, port: Some(port), running, handle: None })
+        Ok(Self {
+            rx,
+            tx,
+            port: Some(port),
+            running,
+            handle: None,
+            command_rx: Some(command_rx),
+            serial_tx,
+        })
     }
 
     pub fn start(&mut self) -> Result<()> {
-        let tx = self.tx.clone();
+        let command_rx = self.command_rx.take().expect("serial command receiver should exist");
+        let serial_tx = self.serial_tx.clone();
+
         let Some(port) = self.port.as_ref() else {
             anyhow::bail!("serial port is disconnected");
         };
@@ -36,14 +49,23 @@ impl Client {
             let mut buffer: Vec<u8> = vec![0; 1024];
 
             while running_thread.load(Ordering::Relaxed) {
+                while let Ok(command) = command_rx.try_recv() {
+                        if let Err(e) = port.write_all(command.as_bytes()) {
+                            eprintln!("Error writing to serial port: {}", e);
+                        }
+                        if let Err(e) = port.write_all(b"\n") {
+                            eprintln!("Error writing newline to serial port: {}", e);
+                        }
+                }
+                
                 match port.read(buffer.as_mut_slice()) {
                     Ok(bytes_read) => {
                         if bytes_read > 0 {
                             let data = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                            let lines: Vec<String> = data.lines().map(str::to_owned).collect();
-                            if let Err(e) = tx.send(lines) {
-                                eprintln!("Error sending data: {}", e);
-                                break;
+                            for line in data.lines().map(str::to_owned) {
+                                if let Err(e) = serial_tx.send(line) {
+                                    eprintln!("Error sending data: {}", e);
+                                }
                             }
                         }
                     }
@@ -53,6 +75,8 @@ impl Client {
                         break;
                     }
                 }
+
+
             }
         });
 
