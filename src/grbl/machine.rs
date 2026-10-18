@@ -4,6 +4,8 @@
 use std::fmt;
 use std::str::FromStr;
 
+use crate::display;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Motion {
     #[default]
@@ -31,6 +33,15 @@ pub enum DistanceMode {
     #[default]
     Absolute, // G90
     Relative, // G91
+}
+
+impl fmt::Display for DistanceMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DistanceMode::Absolute => write!(f, "ABS"),
+            DistanceMode::Relative => write!(f, "REL"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

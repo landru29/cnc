@@ -6,9 +6,10 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
     DefaultTerminal, Frame,
 };
-use std::sync::mpsc::{Receiver, Sender};
+use std::{sync::mpsc::{Receiver, Sender}, time::Duration};
 use crossterm::event::KeyModifiers;
-use crate::grbl::{program::Program, status::{RealTime}};
+use crate::grbl::{machine::MachineConfig, program::Program, status::{RealTime, Status}};
+use anyhow::Result as AnyhowResult;
 
 struct App<'a> {
     gcode: Program,
@@ -16,38 +17,46 @@ struct App<'a> {
     to_cnc: Vec<String>,
     input: String,
     status: RealTime,
+    config: MachineConfig,
     end_of_program_reached: bool,
     rx: &'a Receiver<String>,
     tx: &'a Sender<String>,
+    description: String,
 }
 
 impl<'a> App<'a> {
-    fn new(serial_rx: &'a Receiver<String>, serial_tx: &'a Sender<String>, gcode: Program) -> Self {
+    fn new(serial_rx: &'a Receiver<String>, serial_tx: &'a Sender<String>, gcode: Program, description: String) -> Self {
         Self {
             gcode,
             log: vec![],
             to_cnc: vec![],
             input: String::new(),
             status: RealTime::default(),
+            config: MachineConfig::default(),
             end_of_program_reached:false,
             rx: serial_rx,
             tx: serial_tx,
+            description,
         }
     }
 
-    fn send_command(&mut self, cmd: String) {
+    fn send_command(&mut self, cmd: String) -> AnyhowResult<()> {
         if !cmd.is_empty() {
             if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
-                std::process::exit(0);
+                anyhow::bail!("Exiting application")
             } else if cmd.to_lowercase() == "p" {
                 if !self.end_of_program_reached && let Err(_) = self.gcode.process(1) {
                     self.end_of_program_reached = true;
                 }
             } else {
-                self.to_cnc.push(format!("> {cmd}"));
+                if cmd != "?".to_string() && cmd != "$G".to_string() {
+                    self.to_cnc.push(format!("> {cmd}"));
+                }
                 self.tx.send(cmd).expect("Failed to send command to serial port");
             }
         }
+
+        Ok(())
     }
 
     fn draw(&mut self, f: &mut Frame) {
@@ -64,13 +73,24 @@ impl<'a> App<'a> {
 
         // Status bar
         let status = Line::from(format!(
-            "ABS     {}     {}",
+            "{}     {}     {}    {}    {}    {}",
+            self.config.distance,
             self.status
                 .state
                 .as_ref()
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| "unknown".to_string()),
             self.status.position(),
+            self.status
+                .feed_speed
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            self.status.buffer
+                .as_ref()
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            self.description
         ));
         f.render_widget(Paragraph::new(status), rows[0]);
 
@@ -142,7 +162,20 @@ impl<'a> App<'a> {
 
     fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
         loop {
+            while let Ok(line) = self.rx.try_recv() {
+                if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
+                    self.status = self.status.clone() + status;
+                } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
+                    self.config = machine_config;
+                } else {
+                    self.log.push(line);
+                }
+            }
+            
             terminal.draw(|f| self.draw(f))?;
+            if !event::poll(Duration::from_millis(50))? {
+                continue;
+            }
             if let Event::Key(k) = event::read()? {
                 if k.kind != KeyEventKind::Press {
                     continue;
@@ -150,27 +183,40 @@ impl<'a> App<'a> {
                 match (k.code, k.modifiers) {
                     (KeyCode::Enter, KeyModifiers::NONE) => {
                         let cmd = std::mem::take(&mut self.input);
-                        self.send_command(cmd);
+                        if let Err(_) = self.send_command(cmd) {
+                            break;
+                        }
                     }
                     (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                         return Ok(());
                     }
+                    (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
+                        self.input.clear();
+                        let ctrl_x: u8 = 0x18;
+                        let cmd = format!("{}", ctrl_x as char);
+                        if let Err(_) = self.send_command(cmd) {
+                            break;
+                        }
+                    }
                     (KeyCode::Backspace, KeyModifiers::NONE) => {
                         self.input.pop();
                     }
-                    (KeyCode::Char(c), KeyModifiers::NONE) => self.input.push(c),
+                    (KeyCode::Char(c), KeyModifiers::NONE) => self.input.push(c.to_ascii_uppercase()),
+                    (KeyCode::Char(c), KeyModifiers::SHIFT) => self.input.push(c.to_ascii_uppercase()),
                     _ => {}
                 }
             }
         }
+
+        Ok(())
     }
 }
 
-pub fn display(serial_rx: &Receiver<String>, serial_tx: &Sender<String>, gcode: Program) -> std::io::Result<()> {
+pub fn display(serial_rx: &Receiver<String>, serial_tx: &Sender<String>, gcode: Program, description: String) -> std::io::Result<()> {
     let mut terminal = ratatui::init();
     
 
-    let mut application = App::new(serial_rx, serial_tx, gcode);
+    let mut application = App::new(serial_rx, serial_tx, gcode, description);
 
 
     let res = application.run(&mut terminal);

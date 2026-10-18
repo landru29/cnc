@@ -18,7 +18,7 @@ impl Eq for Position {}
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "X: {:+08.2}      Y: {:+08.2}      Z: {:+08.2}", self.x, self.y, self.z)
+        write!(f, "X: {:+07.2}      Y: {:+07.2}      Z: {:+07.2}", self.x, self.y, self.z)
     }
 }
 

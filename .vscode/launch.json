@@ -15,6 +15,21 @@
       "initCommands": [
         "settings set target.disable-aslr false"
       ]
+    },
+    {
+      "name": "fluidNC",
+      "type": "lldb",
+      "request": "launch",
+      "preLaunchTask": "rust: cargo build",
+      "program": "${workspaceFolder}/target/debug/mock",
+      "args": ["-p", "/tmp/ttyV0", "-c","${workspaceFolder}/testdata/fluidnc.yaml"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "stopOnEntry": false,
+      "sourceLanguages": ["rust"],
+      "initCommands": [
+        "settings set target.disable-aslr false"
+      ]
     }
   ]
 }

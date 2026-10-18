@@ -72,6 +72,29 @@ impl FromStr for Status {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BufferStatus {
+    pub lines: u32,
+    pub bytes: u32,
+}
+
+impl fmt::Display for BufferStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Buf:{},{}", self.lines, self.bytes)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeedSpeed {
+    pub feed: u32,
+    pub speed: u32,
+}
+
+impl fmt::Display for FeedSpeed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "FS:{},{}", self.feed, self.speed)
+    }
+}
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +104,8 @@ pub struct RealTime {
     pub work_position: Option<Position>,
     pub work_coordinate_offset: Option<Position>,
     pub line_number: Option<u32>,
-    pub buffer: Option<(u32, u32)>,
+    pub buffer: Option<BufferStatus>,
+    pub feed_speed: Option<FeedSpeed>,
 }
 
 impl RealTime {
@@ -141,6 +165,7 @@ impl Add for RealTime {
             work_coordinate_offset: if other.work_coordinate_offset == None {self.work_coordinate_offset} else {other.work_coordinate_offset},
             line_number: if other.line_number == None {self.line_number} else {other.line_number},
             buffer: if other.buffer == None {self.buffer} else {other.buffer},
+            feed_speed: if other.feed_speed == None {self.feed_speed} else {other.feed_speed}
         }
     }
 }
@@ -155,6 +180,7 @@ impl Default for RealTime {
             work_coordinate_offset: None,
             line_number: None,
             buffer: None,
+            feed_speed: None,
         }
     }
 }
@@ -190,20 +216,34 @@ impl FromStr for RealTime {
                         .parse::<u32>()
                         .map_err(|_| StatusError::Malformed(part.to_string()))?,
                 );
-            } else if let Some(value) = part.strip_prefix("Buf:") {
+            } else if let Some(value) = part.strip_prefix("Bf:") {
                 let values: Vec<&str> = value.split(',').collect();
                 if values.len() != 2 {
                     return Err(StatusError::Malformed(part.to_string()));
                 }
-                let available = values[0]
+                let lines = values[0]
                     .trim()
                     .parse::<u32>()
                     .map_err(|_| StatusError::Malformed(part.to_string()))?;
-                let used = values[1]
+                let bytes = values[1]
                     .trim()
                     .parse::<u32>()
                     .map_err(|_| StatusError::Malformed(part.to_string()))?;
-                rt.buffer = Some((available, used));
+                rt.buffer = Some(BufferStatus { lines, bytes });
+            } else if let Some(value) = part.strip_prefix("FS:") {
+                 let values: Vec<&str> = value.split(',').collect();
+                if values.len() != 2 {
+                    return Err(StatusError::Malformed(part.to_string()));
+                }
+                let feed = values[0]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                let speed = values[1]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                rt.feed_speed = Some(FeedSpeed { feed, speed })
             } else if let Some(state) = parse_state(part) {
                 rt.state = Some(state);
             } else {
@@ -267,7 +307,8 @@ mod tests {
                 work_position: Some(Position{x:1.0, y:2.0, z:3.0}),
                 work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0}),
                 line_number: Some(42),
-                buffer: Some((7, 8)),
+                buffer: Some(BufferStatus { lines: 7, bytes: 8 }),
+                feed_speed: None,
             }
         );
     }
@@ -307,6 +348,7 @@ mod tests {
                 work_coordinate_offset: None,
                 line_number: None,
                 buffer: None,
+                feed_speed: None,
             }
         ));
     }
@@ -348,6 +390,7 @@ mod tests {
                 work_coordinate_offset: None,
                 line_number: None,
                 buffer: None,
+                feed_speed: None,
             }
         ));
 

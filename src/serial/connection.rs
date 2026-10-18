@@ -14,12 +14,12 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(path: &str, baudrate: u32) -> Result<Self> {
+    pub fn new(path: &str, baudrate: u32, timeout: Duration) -> Result<Self> {
         let (serial_tx, rx) = channel::<String>();
         let (tx, command_rx) = channel::<String>();
 
         let port = serialport::new(path, baudrate)
-            .timeout(Duration::from_millis(100))
+            .timeout(timeout)
             .open()?;
 
         let running = Arc::new(AtomicBool::new(true));

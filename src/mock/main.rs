@@ -48,7 +48,7 @@ fn main() -> Result<()> {
 
     println!("using config {}", cli.config);
     println!("using port {}", cli.port);
-    print!("baudrate: {}", cli.baudrate);
+    println!("baudrate: {}", cli.baudrate);
     println!("press Ctrl+C or Ctrl+D to exit");
 
     let mut uart = serialport::new(&cli.port, cli.baudrate)

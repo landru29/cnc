@@ -38,10 +38,19 @@ fn main() -> Result<()> {
 
     let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
-    let mut serial_client = serial::connection::Client::new(&cli.port, cli.baudrate)?;
+    let mut serial_client = serial::connection::Client::new(
+        &cli.port, 
+        cli.baudrate, 
+        std::time::Duration::from_millis(100),
+    )?;
     serial_client.start()?;
 
-    display(&serial_client.rx, &serial_client.tx, Program::new(gcode))?;
+    // Report positions in machine coordinates, with buffer status
+    vec!["$10=3", "G21", "?", "$G"].iter().for_each(|cmd| {
+        serial_client.tx.send(format!("{}\n", cmd).to_string()).unwrap();
+    });
+
+    display(&serial_client.rx, &serial_client.tx, Program::new(gcode), cli.port)?;
 
     serial_client.stop();
     Ok(())
