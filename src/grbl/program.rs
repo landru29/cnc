@@ -1,9 +1,15 @@
 use anyhow::Result;
 
+use ratatui::{
+    style::{Color, Style},
+    text::{Line, Span, Text},
+};
+
 #[derive(Clone)]
 pub struct Program {
     pub code: Vec<String>,
     pub cursor: usize,
+    pub end_of_program_reached: bool,
 }
 
 impl Program {
@@ -11,6 +17,7 @@ impl Program {
         Self{
             code: data,
             cursor: 0,
+            end_of_program_reached: false,
         }
     }
 
@@ -34,6 +41,7 @@ impl Program {
 
             Ok(current_cursor)
         } else {
+            self.end_of_program_reached = true;
             anyhow::bail!("end of program")
         }
     }
@@ -78,13 +86,17 @@ impl Program {
             && !line.trim().is_empty()
     }
 
-    pub fn viewport(self, height: usize) -> (Vec<String>, usize) {
+    pub fn viewport(self, height: usize, ) -> ProgramViewPort {
         let half_size = height / 2 + (height % 2);
         let len = self.code.len();
 
         if self.cursor >= len {
             let start = len.saturating_sub(height);
-            return (self.code[start..].to_vec(), height);
+            return ProgramViewPort{
+                program_lines: self.code[start..].to_vec(),
+                cursor: height,
+                end_of_program_reached: self.end_of_program_reached,
+            };
         }
 
         let start = if self.cursor > half_size {
@@ -94,7 +106,47 @@ impl Program {
         };
         let end = (start + height).min(len);
 
-        (self.code[start..end].to_vec(), self.cursor - start)
+        ProgramViewPort {
+            program_lines: self.code[start..end].to_vec(),
+            cursor: self.cursor - start,
+            end_of_program_reached: self.end_of_program_reached,
+        }
+    }
+}
+
+
+pub struct ProgramViewPort{
+    pub program_lines: Vec<String>, 
+    pub cursor: usize,
+    pub end_of_program_reached: bool,
+}
+
+impl<'a> Into<Text<'a>> for ProgramViewPort {
+    fn into(self) -> Text<'a> {
+        let lines: Vec<Line> = self.program_lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| {
+                let mut rendered_line = l.clone();
+                if i == self.cursor && self.end_of_program_reached{
+                    rendered_line = format!("█ {}", rendered_line);
+                } else if i == self.cursor {
+                    rendered_line = format!("> {}", rendered_line);
+                } else {
+                    rendered_line = format!("  {}", rendered_line);
+                }
+                let style = if i == self.cursor {
+                    Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
+                } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
+                    Style::default().fg(Color::Green)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Line::from(Span::styled(rendered_line, style))
+            })
+            .collect();
+
+        Text::from(lines)
     }
 }
 
@@ -112,77 +164,88 @@ mod tests {
 
     #[test]
     fn window_empty_program() {
-        let (window, effective) = program_at(&[], 0).viewport(5);
+        let viewport = program_at(&[], 0).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert!(window.is_empty());
         assert_eq!(effective, 5);
     }
 
     #[test]
     fn window_cursor_at_start() {
-        let (window, effective) = program_at(&CODE, 0).viewport(5);
+        let viewport = program_at(&CODE, 0).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
         assert_eq!(effective, 0);
     }
 
     #[test]
     fn window_cursor_near_start() {
-        let (window, effective) = program_at(&CODE, 2).viewport(5);
+        let viewport = program_at(&CODE, 2).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
         assert_eq!(effective, 2);
     }
 
     #[test]
     fn window_centers_cursor() {
-        let (window, effective) = program_at(&CODE, 5).viewport(5);
+        let viewport = program_at(&CODE, 5).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["c", "d", "e", "f", "g"]);
         assert_eq!(effective, 3);
     }
 
     #[test]
     fn window_cursor_near_end() {
-        let (window, effective) = program_at(&CODE, 8).viewport(5);
+        let viewport = program_at(&CODE, 8).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 3);
     }
 
     #[test]
     fn window_cursor_at_last_line() {
-        let (window, effective) = program_at(&CODE, 9).viewport(5);
+        let viewport = program_at(&CODE, 9).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 4);
     }
 
     #[test]
     fn window_cursor_past_end() {
-        let (window, effective) = program_at(&CODE, 10).viewport(5);
+        let viewport = program_at(&CODE, 10).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 5);
     }
 
     #[test]
     fn window_code_shorter_than_height() {
-        let (window, effective) = program_at(&["a", "b", "c"], 1).viewport(5);
+        let viewport = program_at(&["a", "b", "c"], 1).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c"]);
         assert_eq!(effective, 1);
     }
 
     #[test]
     fn window_cursor_past_end_short_code() {
-        let (window, effective) = program_at(&["a", "b", "c"], 3).viewport(5);
+        let viewport = program_at(&["a", "b", "c"], 3).viewport(5);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c"]);
         assert_eq!(effective, 5);
     }
 
     #[test]
     fn window_even_height() {
-        let (window, effective) = program_at(&CODE, 5).viewport(4);
+        let viewport = program_at(&CODE, 5).viewport(4);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["d", "e", "f", "g"]);
         assert_eq!(effective, 2);
     }
 
     #[test]
     fn window_even_height_cursor_at_last_line() {
-        let (window, effective) = program_at(&CODE, 9).viewport(4);
+        let viewport = program_at(&CODE, 9).viewport(4);
+        let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["g", "h", "i", "j"]);
         assert_eq!(effective, 3);
     }

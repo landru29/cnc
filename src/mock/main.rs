@@ -189,11 +189,11 @@ mod tests {
         let mut response = Vec::new();
 
         respond(&mut response, &config, b"?", 0).unwrap();
-        assert_eq!(response, b"<Run|MPos:10.250,20.500,-1.000|WPos:10.250,20.500,-1.000|FS:500,0>\n");
+        assert_eq!(response, b"<Idle|MPos:10.250,20.500,-1.000|WPos:10.250,20.500,-1.000|Bf:15,127|FS:500,0>\n");
 
         response.clear();
         respond(&mut response, &config, b"$G", 0).unwrap();
-        assert_eq!(response, b"[GC:G0 G54 G17 G21 G90 G94 M5 M9 T0 F0 S0]\nok\n");
+        assert_eq!(response, b"[GC:G0 G54 G17 G21 G91 G94 M5 M9 T0 F0 S0]\nok\n");
 
         response.clear();
         respond(&mut response, &config, b"unknown", 0).unwrap();

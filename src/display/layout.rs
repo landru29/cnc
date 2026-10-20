@@ -8,7 +8,7 @@ use ratatui::{
 };
 use std::{sync::mpsc::{Receiver, Sender}, time::Duration};
 use crossterm::event::KeyModifiers;
-use crate::grbl::{machine::MachineConfig, program::Program, status::{RealTime, Status}};
+use crate::grbl::{machine::MachineConfig, program::Program, status::Status, configuration::Configuration};
 use anyhow::Result as AnyhowResult;
 
 struct App<'a> {
@@ -16,12 +16,9 @@ struct App<'a> {
     log: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
-    status: RealTime,
-    config: MachineConfig,
-    end_of_program_reached: bool,
+    machine_configuration: Configuration,
     rx: &'a Receiver<String>,
     tx: &'a Sender<String>,
-    description: String,
 }
 
 impl<'a> App<'a> {
@@ -31,12 +28,9 @@ impl<'a> App<'a> {
             log: vec![],
             to_cnc: vec![],
             input: String::new(),
-            status: RealTime::default(),
-            config: MachineConfig::default(),
-            end_of_program_reached:false,
+            machine_configuration: Configuration::new(description),
             rx: serial_rx,
             tx: serial_tx,
-            description,
         }
     }
 
@@ -45,9 +39,7 @@ impl<'a> App<'a> {
             if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
                 anyhow::bail!("Exiting application")
             } else if cmd.to_lowercase() == "p" {
-                if !self.end_of_program_reached && let Err(_) = self.gcode.process(1) {
-                    self.end_of_program_reached = true;
-                }
+                if !self.gcode.end_of_program_reached && let Err(_) = self.gcode.process(1) {}
             } else {
                 if cmd != "?".to_string() && cmd != "$G".to_string() {
                     self.to_cnc.push(format!("> {cmd}"));
@@ -59,7 +51,7 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn draw(&mut self, f: &mut Frame) {
+    fn draw(&mut self, f: &mut Frame) -> AnyhowResult<()> {
         // Vertical: status / panels / log / prompt
         let rows = Layout::default()
             .direction(Direction::Vertical)
@@ -72,27 +64,7 @@ impl<'a> App<'a> {
             .split(f.area());
 
         // Status bar
-        let status = Line::from(format!(
-            "{}     {}     {}    {}    {}    {}",
-            self.config.distance,
-            self.status
-                .state
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
-            self.status.position(),
-            self.status
-                .feed_speed
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            self.status.buffer
-                .as_ref()
-                .map(|b| b.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            self.description
-        ));
-        f.render_widget(Paragraph::new(status), rows[0]);
+        f.render_widget(Paragraph::new(self.machine_configuration.clone()), rows[0]);
 
         // Two side-by-side panels
         let cols = Layout::default()
@@ -108,33 +80,13 @@ impl<'a> App<'a> {
             cols[0],
         );
 
-        let (viewport, cursor_in_viewport) = self
+        let viewport = self
             .gcode
             .clone()
             .viewport(rows[1].height as usize - 2);
         
-        let lines: Vec<Line> = viewport
-            .iter()
-            .enumerate()
-            .map(|(i, l)| {
-                let mut rendered_line = l.clone();
-                if !self.end_of_program_reached && i == cursor_in_viewport {
-                    rendered_line = format!("> {}", rendered_line);
-                } else if i == cursor_in_viewport {
-                    rendered_line = format!("█ {}", rendered_line);
-                }
-                let style = if i == cursor_in_viewport {
-                    Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
-                } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
-                    Style::default().fg(Color::Green)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                Line::from(Span::styled(rendered_line, style))
-            })
-            .collect();
         f.render_widget(
-            Paragraph::new(lines).block(Block::default().borders(Borders::ALL)),
+            Paragraph::new(viewport).block(Block::default().borders(Borders::ALL)),
             cols[1],
         );
 
@@ -158,21 +110,25 @@ impl<'a> App<'a> {
             rows[3].x + (prompt.len() + self.input.chars().count()) as u16,
             rows[3].y,
         ));
+
+        Ok(())
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal) -> std::io::Result<()> {
         loop {
             while let Ok(line) = self.rx.try_recv() {
                 if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
-                    self.status = self.status.clone() + status;
+                    self.machine_configuration = self.machine_configuration.clone() + status;
                 } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
-                    self.config = machine_config;
+                    self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 } else {
                     self.log.push(line);
                 }
             }
             
-            terminal.draw(|f| self.draw(f))?;
+            terminal.draw(|f| {
+                if let Err(_) = self.draw(f) {}
+            })?;
             if !event::poll(Duration::from_millis(50))? {
                 continue;
             }

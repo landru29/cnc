@@ -80,7 +80,7 @@ pub struct BufferStatus {
 
 impl fmt::Display for BufferStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Buf:{},{}", self.lines, self.bytes)
+        write!(f, "Bf:{},{}", self.lines, self.bytes)
     }
 }
 
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn parses_real_time_status() {
         let status: RealTime =
-            "<Idle|MPos:10,20,30|WPos:1,2,3|WCO:4,5,6|Ln:42|Buf:7,8>".parse().unwrap();
+            "<Idle|MPos:10,20,30|WPos:1,2,3|WCO:4,5,6|Ln:42|Bf:7,8>".parse().unwrap();
 
         assert_eq!(
             status,
