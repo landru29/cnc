@@ -1,14 +1,15 @@
 use anyhow::Result;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 pub struct Client {
-    pub rx: Receiver<String>,
+    rx: Option<Receiver<String>>,
     pub tx: Sender<String>,
     pub port: Option<Box<dyn serialport::SerialPort>>,
     running: Arc<AtomicBool>,
-    handle: Option<std::thread::JoinHandle<()>>,
+    pub handle: Option<JoinHandle<()>>,
     command_rx: Option<Receiver<String>>,
     serial_tx: Sender<String>,
 }
@@ -22,17 +23,21 @@ impl Client {
             .timeout(timeout)
             .open()?;
 
-        let running = Arc::new(AtomicBool::new(true));
-
         Ok(Self {
-            rx,
+            rx: Some(rx),
             tx,
             port: Some(port),
-            running,
+            running: Arc::new(AtomicBool::new(true)),
             handle: None,
             command_rx: Some(command_rx),
             serial_tx,
         })
+    }
+
+    pub fn take_receiver(&mut self) -> Result<Receiver<String>> {
+        self.rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("serial receiver has already been taken"))
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -84,7 +89,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn stop(&mut self) {
+    pub fn restore(&mut self) {
         self.running.store(false, Ordering::Relaxed);
         if let Some(handle) = self.handle.take() {
             handle.join().expect("Failed to join thread");

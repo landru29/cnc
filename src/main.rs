@@ -1,10 +1,12 @@
-mod grbl;
+mod application;
 mod display;
+mod grbl;
 mod serial;
 
-use clap::Parser;
 use anyhow::Result;
-use display::layout::display;
+use application::routing::Channels;
+use clap::Parser;
+use display::layout::Frontend;
 use grbl::program::Program;
 
 #[derive(Parser)]
@@ -31,27 +33,42 @@ fn main() -> Result<()> {
     }
 
     let filename = cli.extras[0].clone();
-    
     println!("Filename : {}", filename);
+    let program = Program::open(filename)?;
 
-    let file_content = std::fs::read_to_string(filename)?;
-
-    let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
-
+    // Open serial port.
     let mut serial_client = serial::connection::Client::new(
-        &cli.port, 
-        cli.baudrate, 
+        &cli.port,
+        cli.baudrate,
         std::time::Duration::from_millis(100),
     )?;
     serial_client.start()?;
 
     // Report positions in machine coordinates, with buffer status
     vec!["$10=3", "G21", "?", "$G"].iter().for_each(|cmd| {
-        serial_client.tx.send(format!("{}\n", cmd).to_string()).unwrap();
+        serial_client
+            .tx
+            .send(format!("{}\n", cmd).to_string())
+            .unwrap();
     });
 
-    display(&serial_client.rx, &serial_client.tx, Program::new(gcode), cli.port)?;
+    // Create UI
+    let mut ui = Frontend::new(program, cli.port);
+    ui.start()?;
 
-    serial_client.stop();
+    Channels::new(
+        serial_client.take_receiver()?,
+        serial_client.tx.clone(),
+        ui.take_command_receiver()?,
+        ui.tx.clone(),
+    )
+    .run_bridge();
+
+    ui.wait()?;
+
+    // Restore states
+    ratatui::restore();
+    serial_client.restore();
+
     Ok(())
 }

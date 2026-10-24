@@ -21,6 +21,14 @@ impl Program {
         }
     }
 
+    pub fn open(filename: String) -> Result<Self> {
+        let file_content = std::fs::read_to_string(filename)?;
+
+        let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
+
+        Ok(Self::new(gcode))
+    }
+
     pub fn process(&mut self, command_offset: usize) -> Result<usize> {
         let mut current_cursor = self.cursor;
 
