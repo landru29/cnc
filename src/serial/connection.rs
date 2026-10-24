@@ -8,7 +8,7 @@ pub struct Client {
     pub tx: Sender<String>,
     pub port: Option<Box<dyn serialport::SerialPort>>,
     running: Arc<AtomicBool>,
-    handle: Option<std::thread::JoinHandle<()>>,
+    pub handle: Option<std::thread::JoinHandle<()>>,
     command_rx: Option<Receiver<String>>,
     serial_tx: Sender<String>,
 }

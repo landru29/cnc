@@ -15,11 +15,7 @@ use anyhow::Result as AnyhowResult;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use anyhow::Result;
 
-pub struct App {
-    state: Option<AppState>,
-    running: Arc<AtomicBool>,
-    pub handle: Option<std::thread::JoinHandle<()>>,
-}
+
 
 struct AppState {
     gcode: Program,
@@ -27,26 +23,24 @@ struct AppState {
     to_cnc: Vec<String>,
     input: String,
     machine_configuration: Configuration,
-    pub rx: Receiver<String>,
-    pub tx: Sender<String>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
+    tx: &Sender<String>
 }
 
 impl AppState {
     fn new(
         gcode: Program,
         description: String,
+        tx: &Sender<String>,
     ) -> Self {
-        let (tx, rx) = channel::<String>();
         Self {
             gcode,
             log: vec![],
             to_cnc: vec![],
             input: String::new(),
             machine_configuration: Configuration::new(description),
-            rx: rx,
-            tx: tx,
             terminal: ratatui::init(),
+            tx,
         }
     }
 
@@ -136,15 +130,27 @@ impl AppState {
 
 }
 
+
+pub struct App {
+    state: Option<AppState>,
+    running: Arc<AtomicBool>,
+    pub handle: Option<std::thread::JoinHandle<()>>,
+    pub rx: Receiver<String>,
+    pub tx: Sender<String>,
+}
+
 impl App {
     pub fn new(
         gcode: Program,
         description: String,
     ) -> Self {
+        let (tx, rx) = channel::<String>();
         Self {
-            state: Some(AppState::new(gcode, description)),
+            state: Some(AppState::new(gcode, description, &tx)),
             running: Arc::new(AtomicBool::new(true)),
             handle: None,
+            tx,
+            rx,
         }
     }
 
@@ -160,7 +166,7 @@ impl App {
         let running_thread = Arc::clone(&self.running);
         self.handle = Some(std::thread::spawn(move || {
             while running_thread.load(Ordering::Relaxed) {
-                while let Ok(line) = app.rx.try_recv() {
+                while let Ok(line) = self.rx.try_recv() {
                     if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
                         app.machine_configuration = app.machine_configuration.clone() + status;
                     } else if let Ok(machine_config) = line.parse::<MachineConfig>() {

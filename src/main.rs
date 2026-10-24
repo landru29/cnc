@@ -1,11 +1,13 @@
 mod grbl;
 mod display;
 mod serial;
+mod application;
 
 use clap::Parser;
 use anyhow::Result;
 use display::layout::App;
 use grbl::program::Program;
+use application::routing::Channels;
 
 #[derive(Parser)]
 #[command(name = "workspace")]
@@ -51,9 +53,15 @@ fn main() -> Result<()> {
     // Create UI
     // let serial_rx = serial_client.take_receiver()?;
     let mut application = App::new(program, cli.port);
-    let res = application.start().and_then(|_| application.wait());
+    let res = application.start();
 
-    // TODO routing between serial_client.tx, serial_client.rx, application.tx, application.rx
+    Channels::new(
+        serial_client.take_receiver()?, 
+        serial_client.tx, 
+        application.rx, 
+        application.tx).run_bridge();
+
+    // TODO wait for application.handle and serial_client.handle
 
     // Restore states
     ratatui::restore();
