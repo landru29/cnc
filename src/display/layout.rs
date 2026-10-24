@@ -191,7 +191,7 @@ impl Frontend {
                         machine_configuration = machine_configuration.clone() + status;
                     } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
                         machine_configuration = machine_configuration.clone() + machine_config;
-                    } else {
+                    } else if line != "ok" {
                         to_cnc.push(line);
                     }
                 }
