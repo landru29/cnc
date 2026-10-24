@@ -6,7 +6,7 @@ mod serial;
 use anyhow::Result;
 use application::routing::Channels;
 use clap::Parser;
-use display::layout::Frontend;
+use display::layout::{Frontend, ThreadedFrontend};
 use grbl::program::Program;
 
 #[derive(Parser)]
@@ -28,13 +28,13 @@ fn main() -> Result<()> {
     println!("opening port {}", cli.port);
     println!("baudrate: {}", cli.baudrate);
 
-    if cli.extras.is_empty() {
-        return Err(anyhow::anyhow!("Missing filename"));
-    }
-
-    let filename = cli.extras[0].clone();
-    println!("Filename : {}", filename);
-    let program = Program::open(filename)?;
+    let program = if cli.extras.is_empty() {
+        None
+    } else {
+        let filename = cli.extras[0].clone();
+        println!("Filename : {}", filename);
+        Some(Program::open(filename)?)
+    };
 
     // Open serial port.
     let mut serial_client = serial::connection::Client::new(
@@ -53,14 +53,17 @@ fn main() -> Result<()> {
     });
 
     // Create UI
-    let mut ui = Frontend::new(program, cli.port);
-    ui.start()?;
+    let mut ui = ThreadedFrontend::new();
+    let mut frontend = Frontend::new(program, cli.port);
+    let frontend_command_rx = frontend.take_command_receiver()?;
+    let frontend_tx = frontend.tx.clone();
+    ui.start(frontend)?;
 
     Channels::new(
         serial_client.take_receiver()?,
         serial_client.tx.clone(),
-        ui.take_command_receiver()?,
-        ui.tx.clone(),
+        frontend_command_rx,
+        frontend_tx,
     )
     .run_bridge();
 

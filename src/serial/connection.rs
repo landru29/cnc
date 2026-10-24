@@ -51,7 +51,8 @@ impl Client {
         let running_thread = Arc::clone(&self.running);
 
         let handle = std::thread::spawn(move || {
-            let mut buffer: Vec<u8> = vec![0; 1024];
+            let mut read_buffer: Vec<u8> = vec![0; 1024];
+            let mut line_buffer = BufferedData::new();
 
             while running_thread.load(Ordering::Relaxed) {
                 while let Ok(command) = command_rx.try_recv() {
@@ -62,13 +63,14 @@ impl Client {
                             eprintln!("Error writing newline to serial port: {}", e);
                         }
                 }
-                
-                match port.read(buffer.as_mut_slice()) {
+
+                match port.read(read_buffer.as_mut_slice()) {
                     Ok(bytes_read) => {
                         if bytes_read > 0 {
-                            let data = String::from_utf8_lossy(&buffer[..bytes_read]).to_string();
-                            for line in data.lines().map(str::to_owned) {
-                                if let Err(e) = serial_tx.send(line) {
+                            line_buffer.push(&read_buffer[..bytes_read]);
+
+                            for line in line_buffer.by_ref() {
+                                if let Err(e) = serial_tx.send(line.to_string()) {
                                     eprintln!("Error sending data: {}", e);
                                 }
                             }
@@ -95,5 +97,35 @@ impl Client {
             handle.join().expect("Failed to join thread");
         }
         self.port.take();
+    }
+}
+
+
+struct BufferedData{
+    remaining: Vec<u8>
+}
+
+impl BufferedData {
+    fn new() -> Self {
+        Self {
+            remaining: vec![],
+        }
+    }
+
+    fn push(&mut self, data: &[u8]) {
+        self.remaining.extend_from_slice(data);
+    }
+
+}
+
+impl Iterator for BufferedData {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let pos = self.remaining.iter().position(|&b| b == b'\n')?;
+
+        let line = self.remaining.drain(..=pos).collect::<Vec<u8>>();
+
+        Some(String::from_utf8_lossy(&line[..line.len() - 1]).into_owned())
     }
 }

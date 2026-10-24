@@ -27,7 +27,7 @@ impl Configuration {
 
 impl<'a> Into<Text<'a>> for Configuration {
     fn into(self) -> Text<'a> {
-        Text::from(format!("{}    {}    {}    {}    {}    {}",
+        Text::from(format!("{}    {}    {}    {}    {}    {}    {}",
             self.config.distance,
             self.status
                 .state
@@ -44,6 +44,7 @@ impl<'a> Into<Text<'a>> for Configuration {
                 .as_ref()
                 .map(|b| b.to_string())
                 .unwrap_or_else(|| "-".to_string()),
+            self.status.step_mode,
             self.description,
         ))
     }

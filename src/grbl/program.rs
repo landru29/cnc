@@ -29,8 +29,9 @@ impl Program {
         Ok(Self::new(gcode))
     }
 
-    pub fn process(&mut self, command_offset: usize) -> Result<usize> {
+    pub fn process(&mut self, command_offset: usize) -> Result<Vec<String>> {
         let mut current_cursor = self.cursor;
+        let mut output: Vec<String> = vec![];
 
         for _ in 0..command_offset {
             current_cursor +=1;
@@ -42,12 +43,16 @@ impl Program {
             while current_cursor<self.code.len() && !Self::is_code_line(&self.code[current_cursor]) {
                 current_cursor += 1;
             }
+
+            if current_cursor< self.code.len() && Self::is_code_line(&self.code[current_cursor]) {
+                output.push(self.code[current_cursor].clone());
+            }
         }
 
         if current_cursor < self.code.len()  && Self::is_code_line(&self.code[current_cursor]) {
             self.cursor = current_cursor;
 
-            Ok(current_cursor)
+            Ok(output)
         } else {
             self.end_of_program_reached = true;
             anyhow::bail!("end of program")

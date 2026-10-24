@@ -96,6 +96,19 @@ impl fmt::Display for FeedSpeed {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Overrides {
+    pub feed_rate: u32,
+    pub rapid: u32,
+    pub spindle: u32
+}
+
+impl fmt::Display for Overrides {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ov:{},{},{}", self.feed_rate, self.rapid, self.spindle)
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RealTime {
@@ -106,6 +119,8 @@ pub struct RealTime {
     pub line_number: Option<u32>,
     pub buffer: Option<BufferStatus>,
     pub feed_speed: Option<FeedSpeed>,
+    pub overrides: Option<Overrides>,
+    pub step_mode: Mode,
 }
 
 impl RealTime {
@@ -122,13 +137,28 @@ impl RealTime {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Mode {
+    Step,
+    Program,
+}
+
+impl fmt::Display for Mode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Step => write!(f, "step"),
+            Self::Program => write!(f, "    "),
+        }
+    }
+}
+
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum State {
     Idle,
     Run,
-    Hold,
+    Hold(bool),
     Jog,
     Alarm,
     Door,
@@ -142,7 +172,11 @@ impl fmt::Display for State {
         match self {
             Self::Idle => write!(f, "Idle"),
             Self::Run => write!(f, "Run"),
-            Self::Hold => write!(f, "Hold"),
+            Self::Hold(ready) => if *ready {
+                write!(f, "Hold")
+            }else{
+                write!(f, "Holding")
+            },
             Self::Jog => write!(f, "Jog"),
             Self::Alarm => write!(f, "Alarm"),
             Self::Door => write!(f, "Door"),
@@ -165,7 +199,9 @@ impl Add for RealTime {
             work_coordinate_offset: if other.work_coordinate_offset == None {self.work_coordinate_offset} else {other.work_coordinate_offset},
             line_number: if other.line_number == None {self.line_number} else {other.line_number},
             buffer: if other.buffer == None {self.buffer} else {other.buffer},
-            feed_speed: if other.feed_speed == None {self.feed_speed} else {other.feed_speed}
+            feed_speed: if other.feed_speed == None {self.feed_speed} else {other.feed_speed},
+            overrides: if other.overrides == None {self.overrides} else {other.overrides},
+            step_mode:other.step_mode,
         }
     }
 }
@@ -181,6 +217,8 @@ impl Default for RealTime {
             line_number: None,
             buffer: None,
             feed_speed: None,
+            overrides: None,
+            step_mode: Mode::Program,
         }
     }
 }
@@ -230,8 +268,30 @@ impl FromStr for RealTime {
                     .parse::<u32>()
                     .map_err(|_| StatusError::Malformed(part.to_string()))?;
                 rt.buffer = Some(BufferStatus { lines, bytes });
+            } else if let Some(value) = part.strip_prefix("Pn:") {
+                if value == "Q" {
+                    rt.step_mode = Mode::Step;
+                }
+            } else if let Some(value) = part.strip_prefix("Ov:") {
+                let values: Vec<&str> = value.split(',').collect();
+                if values.len() != 3 {
+                    return Err(StatusError::Malformed(part.to_string()));
+                }
+                let feed_rate = values[0]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                let rapid = values[1]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                let spindle = values[1]
+                    .trim()
+                    .parse::<u32>()
+                    .map_err(|_| StatusError::Malformed(part.to_string()))?;
+                rt.overrides = Some(Overrides { feed_rate, rapid, spindle })
             } else if let Some(value) = part.strip_prefix("FS:") {
-                 let values: Vec<&str> = value.split(',').collect();
+                let values: Vec<&str> = value.split(',').collect();
                 if values.len() != 2 {
                     return Err(StatusError::Malformed(part.to_string()));
                 }
@@ -279,7 +339,8 @@ fn parse_state(part: &str) -> Option<State> {
     match part {
         "Idle" => Some(State::Idle),
         "Run" => Some(State::Run),
-        "Hold" => Some(State::Hold),
+        "Hold:0" => Some(State::Hold(true)),
+        "Hold:1" => Some(State::Hold(false)),
         "Jog" => Some(State::Jog),
         "Alarm" => Some(State::Alarm),
         "Door" => Some(State::Door),
@@ -309,6 +370,8 @@ mod tests {
                 line_number: Some(42),
                 buffer: Some(BufferStatus { lines: 7, bytes: 8 }),
                 feed_speed: None,
+                overrides: None,
+                step_mode: Mode::Program,
             }
         );
     }
@@ -349,6 +412,8 @@ mod tests {
                 line_number: None,
                 buffer: None,
                 feed_speed: None,
+                overrides: None,
+                step_mode: Mode::Program,
             }
         ));
     }
@@ -391,6 +456,8 @@ mod tests {
                 line_number: None,
                 buffer: None,
                 feed_speed: None,
+                overrides: None,
+                step_mode: Mode::Program,
             }
         ));
 
@@ -399,5 +466,12 @@ mod tests {
             Err(StatusError::NotAStatus)
         ));
     }
+
+     #[test]
+    fn foo() {
+        let status: Status = "<Hold:0|MPos:-265.819,-265.820,0.000|Bf:15,124|FS:0,0|Pn:Q|Ov:100,100,100>".parse().unwrap();
+    }
 }
+
+
 
