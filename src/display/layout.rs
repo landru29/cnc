@@ -8,8 +8,8 @@ use ratatui::{
     Frame, Terminal,
     backend::CrosstermBackend,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Direction, Layout, Position},
-    style::{Color, Style},
+    layout::{Constraint, Direction, Layout, Position, Alignment},
+    style::{Color, Style, Modifier},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -26,7 +26,7 @@ use std::{
 
 pub struct Frontend {
     gcode: Program,
-    log: Vec<String>,
+    helper: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
     machine_configuration: Configuration,
@@ -45,7 +45,7 @@ impl Frontend {
         let (command_tx, command_rx) = channel::<String>();
         Self {
             gcode,
-            log: vec![],
+            helper: vec![],
             to_cnc: vec![],
             input: String::new(),
             machine_configuration: Configuration::new(description),
@@ -68,10 +68,6 @@ impl Frontend {
         if !cmd.is_empty() {
             if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit" {
                 anyhow::bail!("Exiting application")
-            } else if cmd.to_lowercase() == "p" {
-                if !gcode.end_of_program_reached
-                    && let Err(_) = gcode.process(1)
-                {}
             } else {
                 if cmd != "?".to_string() && cmd != "$G".to_string() {
                     to_cnc.push(format!("> {cmd}"));
@@ -88,19 +84,20 @@ impl Frontend {
     fn draw(
         f: &mut Frame,
         gcode: &Program,
-        log: &[String],
+        helper: &[String],
         to_cnc: &[String],
         input: &str,
         machine_configuration: &Configuration,
     ) -> AnyhowResult<()> {
-        // Vertical: status / panels / log / prompt
+        // Vertical: status / panels / helper / prompt
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1), // status bar
                 Constraint::Min(5),    // top panels
-                Constraint::Length(6), // log area
+                Constraint::Length(6), // helper area
                 Constraint::Length(1), // prompt
+                Constraint::Length(1), // command helper
             ])
             .split(f.area());
 
@@ -131,15 +128,13 @@ impl Frontend {
             cols[1],
         );
 
-        // Log area (shows the latest lines that fit)
-        let log_visible = rows[2].height.saturating_sub(2) as usize;
-        let log_start = log.len().saturating_sub(log_visible);
-        let log: Vec<Line> = log[log_start..]
+        // helper area 
+        let helper: Vec<Line> = helper
             .iter()
             .map(|l| Line::from(l.as_str()))
             .collect();
         f.render_widget(
-            Paragraph::new(log).block(Block::default().borders(Borders::ALL)),
+            Paragraph::new(helper).block(Block::default().borders(Borders::ALL)),
             rows[2],
         );
 
@@ -154,6 +149,29 @@ impl Frontend {
             rows[3].x + (prompt.len() + input.chars().count()) as u16,
             rows[3].y,
         ));
+
+        let keys = [
+            ("↑/↓", "History"),
+            ("CTRL+d", "Quit"),
+            ("CTRL+x", "Release machine"),
+            ("F5", "Run"),
+            ("F6", "Pause"),
+            ("F10", "Step over"),
+        ];
+
+        let key_style = Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let desc_style = Style::default().fg(Color::Gray);
+
+        let mut spans = Vec::new();
+        for (key, desc) in keys {
+            spans.push(Span::styled(format!(" {key} "), key_style));
+            spans.push(Span::styled(format!(" {desc}  "), desc_style));
+        }
+
+        f.render_widget(Paragraph::new(Line::from(spans)).alignment(Alignment::Right), rows[4]);
 
         Ok(())
     }
@@ -178,11 +196,12 @@ impl Frontend {
             .ok_or_else(|| anyhow::anyhow!("Application receiver has already been taken"))?;
         let running_thread = Arc::clone(&self.running);
         let mut gcode = self.gcode.clone();
-        let log = self.log.clone();
+        let helper = self.helper.clone();
         let mut to_cnc = self.to_cnc.clone();
         let mut input = self.input.clone();
         let mut machine_configuration = self.machine_configuration.clone();
         let command_tx = self.command_tx.clone();
+        
         self.handle = Some(std::thread::spawn(move || {
             let mut terminal = terminal;
             while running_thread.load(Ordering::Relaxed) {
@@ -198,7 +217,7 @@ impl Frontend {
 
                 if let Err(_) = terminal.draw(|f| {
                     if let Err(_) =
-                        Self::draw(f, &gcode, &log, &to_cnc, &input, &machine_configuration)
+                        Self::draw(f, &gcode, &helper, &to_cnc, &input, &machine_configuration)
                     {
                     }
                 }) {
@@ -230,6 +249,17 @@ impl Frontend {
                             {
                                 break;
                             }
+                        }
+                        (KeyCode::F(10), KeyModifiers::NONE) => {
+                            if !gcode.end_of_program_reached
+                                && let Err(_) = gcode.process(1)
+                            {}
+                        }
+                        (KeyCode::F(5), KeyModifiers::NONE) => {
+                            // TODO: run program
+                        }
+                        (KeyCode::F(6), KeyModifiers::NONE) => {
+                            // TODO: pause program
                         }
                         (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
                             running_thread.store(false, Ordering::Relaxed);
