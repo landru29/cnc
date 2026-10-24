@@ -1,60 +1,84 @@
+use crate::grbl::{
+    configuration::Configuration, machine::MachineConfig, program::Program, status::Status,
+};
+use anyhow::Result as AnyhowResult;
+use anyhow::Result;
+use crossterm::event::KeyModifiers;
 use ratatui::{
+    Frame, Terminal,
     backend::CrosstermBackend,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Direction, Layout, Position},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
-    Terminal,
 };
-use std::{io::Stdout, sync::mpsc::{Receiver, Sender, channel}, time::Duration};
-use crossterm::event::KeyModifiers;
-use crate::grbl::{machine::MachineConfig, program::Program, status::Status, configuration::Configuration};
-use anyhow::Result as AnyhowResult;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use anyhow::Result;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use std::thread::JoinHandle;
+use std::{
+    io::Stdout,
+    sync::mpsc::{Receiver, Sender, channel},
+    time::Duration,
+};
 
-
-
-struct AppState {
+pub struct Frontend {
     gcode: Program,
     log: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
     machine_configuration: Configuration,
-    terminal: Terminal<CrosstermBackend<Stdout>>,
-    tx: &Sender<String>
+    terminal: Option<Terminal<CrosstermBackend<Stdout>>>,
+    pub tx: Sender<String>,
+    command_tx: Sender<String>,
+    running: Arc<AtomicBool>,
+    rx: Option<Receiver<String>>,
+    command_rx: Option<Receiver<String>>,
+    handle: Option<JoinHandle<()>>,
 }
 
-impl AppState {
-    fn new(
-        gcode: Program,
-        description: String,
-        tx: &Sender<String>,
-    ) -> Self {
+impl Frontend {
+    pub fn new(gcode: Program, description: String) -> Self {
+        let (tx, rx) = channel::<String>();
+        let (command_tx, command_rx) = channel::<String>();
         Self {
             gcode,
             log: vec![],
             to_cnc: vec![],
             input: String::new(),
             machine_configuration: Configuration::new(description),
-            terminal: ratatui::init(),
+            terminal: Some(ratatui::init()),
             tx,
+            command_tx,
+            running: Arc::new(AtomicBool::new(true)),
+            rx: Some(rx),
+            command_rx: Some(command_rx),
+            handle: None,
         }
     }
 
-    fn send_command(&mut self, cmd: String) -> AnyhowResult<()> {
+    fn send_command(
+        gcode: &mut Program,
+        to_cnc: &mut Vec<String>,
+        command_tx: &Sender<String>,
+        cmd: String,
+    ) -> AnyhowResult<()> {
         if !cmd.is_empty() {
-            if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit"  {
+            if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit" {
                 anyhow::bail!("Exiting application")
             } else if cmd.to_lowercase() == "p" {
-                if !self.gcode.end_of_program_reached && let Err(_) = self.gcode.process(1) {}
+                if !gcode.end_of_program_reached
+                    && let Err(_) = gcode.process(1)
+                {}
             } else {
                 if cmd != "?".to_string() && cmd != "$G".to_string() {
-                    self.to_cnc.push(format!("> {cmd}"));
+                    to_cnc.push(format!("> {cmd}"));
                 }
-                self.tx.send(cmd).expect("Failed to send command to serial port");
+                command_tx
+                    .send(cmd)
+                    .expect("Failed to send command to serial port");
             }
         }
 
@@ -91,7 +115,10 @@ impl AppState {
 
         let to_cnc_visible = rows[1].height.saturating_sub(2) as usize;
         let to_cnc_start = to_cnc.len().saturating_sub(to_cnc_visible);
-        let to_cnc: Vec<Line> = to_cnc[to_cnc_start..].iter().map(|l| Line::from(l.as_str())).collect();
+        let to_cnc: Vec<Line> = to_cnc[to_cnc_start..]
+            .iter()
+            .map(|l| Line::from(l.as_str()))
+            .collect();
         f.render_widget(
             Paragraph::new(to_cnc).block(Block::default().borders(Borders::ALL)),
             cols[0],
@@ -107,7 +134,10 @@ impl AppState {
         // Log area (shows the latest lines that fit)
         let log_visible = rows[2].height.saturating_sub(2) as usize;
         let log_start = log.len().saturating_sub(log_visible);
-        let log: Vec<Line> = log[log_start..].iter().map(|l| Line::from(l.as_str())).collect();
+        let log: Vec<Line> = log[log_start..]
+            .iter()
+            .map(|l| Line::from(l.as_str()))
+            .collect();
         f.render_widget(
             Paragraph::new(log).block(Block::default().borders(Borders::ALL)),
             rows[2],
@@ -128,79 +158,64 @@ impl AppState {
         Ok(())
     }
 
-}
-
-
-pub struct App {
-    state: Option<AppState>,
-    running: Arc<AtomicBool>,
-    pub handle: Option<std::thread::JoinHandle<()>>,
-    pub rx: Receiver<String>,
-    pub tx: Sender<String>,
-}
-
-impl App {
-    pub fn new(
-        gcode: Program,
-        description: String,
-    ) -> Self {
-        let (tx, rx) = channel::<String>();
-        Self {
-            state: Some(AppState::new(gcode, description, &tx)),
-            running: Arc::new(AtomicBool::new(true)),
-            handle: None,
-            tx,
-            rx,
-        }
-    }
-
-    pub fn stop(&mut self) {
-        self.running.store(false, Ordering::Relaxed);
+    pub fn take_command_receiver(&mut self) -> Result<Receiver<String>> {
+        self.command_rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Application command receiver has already been taken"))
     }
 
     pub fn start(&mut self) -> Result<()> {
-        let mut app = self
-            .state
+        if self.handle.is_some() {
+            anyhow::bail!("Application UI has already been started");
+        }
+        let terminal = self
+            .terminal
             .take()
-            .ok_or_else(|| anyhow::anyhow!("Application has already been started"))?;
+            .ok_or_else(|| anyhow::anyhow!("Application terminal has already been taken"))?;
+        let rx = self
+            .rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Application receiver has already been taken"))?;
         let running_thread = Arc::clone(&self.running);
+        let mut gcode = self.gcode.clone();
+        let log = self.log.clone();
+        let mut to_cnc = self.to_cnc.clone();
+        let mut input = self.input.clone();
+        let mut machine_configuration = self.machine_configuration.clone();
+        let command_tx = self.command_tx.clone();
         self.handle = Some(std::thread::spawn(move || {
+            let mut terminal = terminal;
             while running_thread.load(Ordering::Relaxed) {
-                while let Ok(line) = self.rx.try_recv() {
+                while let Ok(line) = rx.try_recv() {
                     if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
-                        app.machine_configuration = app.machine_configuration.clone() + status;
+                        machine_configuration = machine_configuration.clone() + status;
                     } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
-                        app.machine_configuration = app.machine_configuration.clone() + machine_config;
+                        machine_configuration = machine_configuration.clone() + machine_config;
                     } else {
-                        app.log.push(line);
+                        to_cnc.push(line);
                     }
                 }
 
-                let gcode = app.gcode.clone();
-                let log = app.log.clone();
-                let to_cnc = app.to_cnc.clone();
-                let input = app.input.clone();
-                let machine_configuration = app.machine_configuration.clone();
-
-                if let Err(_) = app.terminal.draw(|f| {
+                if let Err(_) = terminal.draw(|f| {
                     if let Err(_) =
-                        AppState::draw(f, &gcode, &log, &to_cnc, &input, &machine_configuration)
-                    {}
+                        Self::draw(f, &gcode, &log, &to_cnc, &input, &machine_configuration)
+                    {
+                    }
                 }) {
                     running_thread.store(false, Ordering::Relaxed);
                     continue;
                 };
 
                 match event::poll(Duration::from_millis(50)) {
-                    Ok(value)=> {
+                    Ok(value) => {
                         if !value {
                             continue;
                         }
-                    },
-                    Err(_)=>{
+                    }
+                    Err(_) => {
                         running_thread.store(false, Ordering::Relaxed);
                         continue;
-                    },
+                    }
                 };
 
                 if let Ok(Event::Key(k)) = event::read() {
@@ -209,8 +224,10 @@ impl App {
                     }
                     match (k.code, k.modifiers) {
                         (KeyCode::Enter, KeyModifiers::NONE) => {
-                            let cmd = std::mem::take(&mut app.input);
-                            if let Err(_) = app.send_command(cmd) {
+                            let cmd = std::mem::take(&mut input);
+                            if let Err(_) =
+                                Self::send_command(&mut gcode, &mut to_cnc, &command_tx, cmd)
+                            {
                                 break;
                             }
                         }
@@ -218,38 +235,38 @@ impl App {
                             running_thread.store(false, Ordering::Relaxed);
                         }
                         (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
-                            app.input.clear();
+                            input.clear();
                             let ctrl_x: u8 = 0x18;
                             let cmd = format!("{}", ctrl_x as char);
-                            if let Err(_) = app.send_command(cmd) {
+                            if let Err(_) =
+                                Self::send_command(&mut gcode, &mut to_cnc, &command_tx, cmd)
+                            {
                                 break;
                             }
                         }
                         (KeyCode::Backspace, KeyModifiers::NONE) => {
-                            app.input.pop();
+                            input.pop();
                         }
                         (KeyCode::Char(c), KeyModifiers::NONE) => {
-                            app.input.push(c.to_ascii_uppercase())
+                            input.push(c.to_ascii_uppercase())
                         }
                         (KeyCode::Char(c), KeyModifiers::SHIFT) => {
-                            app.input.push(c.to_ascii_uppercase())
+                            input.push(c.to_ascii_uppercase())
                         }
                         _ => {}
                     }
                 }
             }
         }));
-
         Ok(())
     }
 
     pub fn wait(&mut self) -> Result<()> {
         if let Some(handle) = self.handle.take() {
             handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("UI thread panicked"))?;
+                .join()
+                .map_err(|_| anyhow::anyhow!("UI thread panicked"))?;
         }
-
         Ok(())
     }
 }

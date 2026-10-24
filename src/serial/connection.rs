@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread::JoinHandle;
 use std::time::Duration;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
@@ -8,7 +9,7 @@ pub struct Client {
     pub tx: Sender<String>,
     pub port: Option<Box<dyn serialport::SerialPort>>,
     running: Arc<AtomicBool>,
-    pub handle: Option<std::thread::JoinHandle<()>>,
+    pub handle: Option<JoinHandle<()>>,
     command_rx: Option<Receiver<String>>,
     serial_tx: Sender<String>,
 }

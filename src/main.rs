@@ -1,13 +1,13 @@
-mod grbl;
-mod display;
-mod serial;
 mod application;
+mod display;
+mod grbl;
+mod serial;
 
-use clap::Parser;
 use anyhow::Result;
-use display::layout::App;
-use grbl::program::Program;
 use application::routing::Channels;
+use clap::Parser;
+use display::layout::Frontend;
+use grbl::program::Program;
 
 #[derive(Parser)]
 #[command(name = "workspace")]
@@ -36,36 +36,39 @@ fn main() -> Result<()> {
     println!("Filename : {}", filename);
     let program = Program::open(filename)?;
 
-
     // Open serial port.
     let mut serial_client = serial::connection::Client::new(
-        &cli.port, 
-        cli.baudrate, 
+        &cli.port,
+        cli.baudrate,
         std::time::Duration::from_millis(100),
     )?;
     serial_client.start()?;
 
     // Report positions in machine coordinates, with buffer status
     vec!["$10=3", "G21", "?", "$G"].iter().for_each(|cmd| {
-        serial_client.tx.send(format!("{}\n", cmd).to_string()).unwrap();
+        serial_client
+            .tx
+            .send(format!("{}\n", cmd).to_string())
+            .unwrap();
     });
 
     // Create UI
-    // let serial_rx = serial_client.take_receiver()?;
-    let mut application = App::new(program, cli.port);
-    let res = application.start();
+    let mut ui = Frontend::new(program, cli.port);
+    ui.start()?;
 
     Channels::new(
-        serial_client.take_receiver()?, 
-        serial_client.tx, 
-        application.rx, 
-        application.tx).run_bridge();
+        serial_client.take_receiver()?,
+        serial_client.tx.clone(),
+        ui.take_command_receiver()?,
+        ui.tx.clone(),
+    )
+    .run_bridge();
 
-    // TODO wait for application.handle and serial_client.handle
+    ui.wait()?;
 
     // Restore states
     ratatui::restore();
     serial_client.restore();
 
-    Ok(res?)
+    Ok(())
 }
