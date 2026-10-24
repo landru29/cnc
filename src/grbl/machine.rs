@@ -4,8 +4,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use crate::display;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Motion {
     #[default]

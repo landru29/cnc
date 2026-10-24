@@ -21,3 +21,4 @@ serde_yaml = "0.9"
 serialport = { version = "4.6", default-features = false }
 ctrlc = "3.4"
 ratatui-core = "0.1.2"
+tokio = "1.54.1"

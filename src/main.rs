@@ -4,7 +4,7 @@ mod serial;
 
 use clap::Parser;
 use anyhow::Result;
-use display::layout::display;
+use display::layout::App;
 use grbl::program::Program;
 
 #[derive(Parser)]
@@ -31,13 +31,11 @@ fn main() -> Result<()> {
     }
 
     let filename = cli.extras[0].clone();
-    
     println!("Filename : {}", filename);
+    let program = Program::open(filename)?;
 
-    let file_content = std::fs::read_to_string(filename)?;
 
-    let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
-
+    // Open serial port.
     let mut serial_client = serial::connection::Client::new(
         &cli.port, 
         cli.baudrate, 
@@ -50,8 +48,16 @@ fn main() -> Result<()> {
         serial_client.tx.send(format!("{}\n", cmd).to_string()).unwrap();
     });
 
-    display(&serial_client.rx, &serial_client.tx, Program::new(gcode), cli.port)?;
+    // Create UI
+    // let serial_rx = serial_client.take_receiver()?;
+    let mut application = App::new(program, cli.port);
+    let res = application.start().and_then(|_| application.wait());
 
-    serial_client.stop();
-    Ok(())
+    // TODO routing between serial_client.tx, serial_client.rx, application.tx, application.rx
+
+    // Restore states
+    ratatui::restore();
+    serial_client.restore();
+
+    Ok(res?)
 }
