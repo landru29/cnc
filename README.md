@@ -41,6 +41,15 @@ The default serial port is `/dev/ttyUSB0` if you do not specify one:
 cargo run --release --bin cnc -- path/to/program.gcode
 ```
 
+To log frontend and GRBL errors to a file, pass `--log-file` (or `-l`):
+
+```bash
+cargo run --release --bin cnc -- --log-file cnc-errors.log path/to/program.gcode
+```
+
+The file is created if needed and appended to. Without this option, no log file is
+created. Log entries include an RFC 3339 UTC timestamp.
+
 ## Developpement
 
 1. Launch the devcontainer.

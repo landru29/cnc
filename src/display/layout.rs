@@ -1,6 +1,7 @@
 use crate::grbl::{
     configuration::Configuration, machine::MachineConfig, program::Program, status::{Mode, State::Alarm, Status},
 };
+use crate::logging::ErrorLogger;
 use anyhow::Result as AnyhowResult;
 use anyhow::Result;
 use crossterm::event::KeyModifiers;
@@ -37,6 +38,7 @@ pub struct Frontend {
     rx: Option<Receiver<String>>,
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
+    logger: Option<ErrorLogger>,
 }
 
 pub struct ThreadedFrontend {
@@ -44,7 +46,7 @@ pub struct ThreadedFrontend {
 }
 
 impl Frontend {
-    pub fn new(gcode: Option<Program>, description: String) -> Self {
+    pub fn new(gcode: Option<Program>, description: String, logger: Option<ErrorLogger>) -> Self {
         let (tx, rx) = channel::<String>();
         let (command_tx, command_rx) = channel::<String>();
         Self {
@@ -60,12 +62,22 @@ impl Frontend {
             rx: Some(rx),
             command_rx: Some(command_rx),
             running: Arc::new(AtomicBool::new(true)),
+            logger,
+        }
+    }
+
+    fn log_error(&self, error: impl std::fmt::Display) {
+        if let Some(logger) = &self.logger {
+            if let Err(log_error) = logger.log_error(&error) {
+                eprintln!("Failed to write frontend error to log file: {log_error}");
+            }
         }
     }
 
     fn send_command(
         to_cnc: Option<&mut Vec<String>>,
         command_tx: &Sender<String>,
+        logger: Option<&ErrorLogger>,
         cmd: String,
     ) -> AnyhowResult<()> {
         if !cmd.is_empty() {
@@ -75,9 +87,14 @@ impl Frontend {
                 if let Some(echo) = to_cnc {
                     echo.push(format!("> {cmd}"));
                 }
-                command_tx
-                    .send(cmd)
-                    .expect("Failed to send command to serial port");
+                if let Err(error) = command_tx.send(cmd) {
+                    if let Some(logger) = logger {
+                        if let Err(log_error) = logger.log_error(&error) {
+                            eprintln!("Failed to write frontend error to log file: {log_error}");
+                        }
+                    }
+                    return Err(error.into());
+                }
             }
         }
 
@@ -207,42 +224,66 @@ impl Frontend {
     }
 
     fn run_iteration(&mut self) -> bool {
-        let rx = self
+        let lines: Vec<String> = self
             .rx
             .as_ref()
-            .expect("Frontend receiver must be available while running");
+            .expect("Frontend receiver must be available while running")
+            .try_iter()
+            .collect();
 
-        while let Ok(line) = rx.try_recv() {
-            if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
-                self.machine_configuration = self.machine_configuration.clone() + status;
+        for line in lines {
+            match line.parse::<Status>() {
+                Ok(Status::RealTime(status)) => {
+                    self.machine_configuration = self.machine_configuration.clone() + status;
 
-                if self.program_running 
-                    && let Some(prog) = self.gcode.as_mut() 
-                    && !prog.end_of_program_reached 
-                    && let Some(buffer) = self.machine_configuration.status.buffer.as_ref() 
-                    && let Some(state) = self.machine_configuration.status.state.clone()
-                    && state != Alarm {
+                    if self.program_running
+                        && let Some(prog) = self.gcode.as_mut()
+                        && !prog.end_of_program_reached
+                        && let Some(buffer) = self.machine_configuration.status.buffer.as_ref()
+                        && let Some(state) = self.machine_configuration.status.state.clone()
+                        && state != Alarm
+                    {
                         self.to_cnc.push("------------".to_string());
                         match prog.process(buffer.lines as usize) {
-                            Ok(data)=> {
+                            Ok(data) => {
                                 data.iter().for_each(|command| {
                                     self.to_cnc.push(command.clone());
-                                    Self::send_command(None, &self.command_tx, command.clone());
+                                    if Self::send_command(
+                                        None,
+                                        &self.command_tx,
+                                        self.logger.as_ref(),
+                                        command.clone(),
+                                    )
+                                    .is_err()
+                                    {
+                                        self.program_running = false;
+                                    }
                                 });
-                            },
-                            Err(_)=>{}
+                            }
+                            Err(error) => self.log_error(error),
                         }
+                    }
                 }
-            } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
-                self.machine_configuration = self.machine_configuration.clone() + machine_config;
-            } else if line.to_ascii_lowercase().trim() != "ok".to_string() {
-                self.to_cnc.push(line);
+                Ok(Status::Error(code)) => {
+                    self.log_error(format!("GRBL reported error:{code}"));
+                    self.to_cnc.push(line);
+                }
+                Ok(Status::Alarm(code)) => {
+                    self.log_error(format!("GRBL reported ALARM:{code}"));
+                    self.to_cnc.push(line);
+                }
+                _ => {
+                    if let Ok(machine_config) = line.parse::<MachineConfig>() {
+                        self.machine_configuration = self.machine_configuration.clone() + machine_config;
+                    } else if line.to_ascii_lowercase().trim() != "ok" {
+                        self.to_cnc.push(line);
+                    }
+                }
             }
-
-            
         }
 
-        if self.draw().is_err() {
+        if let Err(error) = self.draw() {
+            self.log_error(error);
             self.running.store(false, Ordering::Relaxed);
             return true;
         }
@@ -250,13 +291,23 @@ impl Frontend {
         match event::poll(Duration::from_millis(50)) {
             Ok(false) => return true,
             Ok(true) => {}
-            Err(_) => {
+            Err(error) => {
+                self.log_error(error);
                 self.running.store(false, Ordering::Relaxed);
                 return true;
             }
         }
 
-        if let Ok(Event::Key(k)) = event::read() {
+        let event = match event::read() {
+            Ok(event) => event,
+            Err(error) => {
+                self.log_error(error);
+                self.running.store(false, Ordering::Relaxed);
+                return true;
+            }
+        };
+
+        if let Event::Key(k) = event {
             if k.kind != KeyEventKind::Press {
                 return true;
             }
@@ -266,6 +317,7 @@ impl Frontend {
                     if Self::send_command(
                         Some(&mut self.to_cnc),
                         &self.command_tx,
+                        self.logger.as_ref(),
                         cmd,
                     )
                     .is_err()
@@ -279,6 +331,7 @@ impl Frontend {
                         if Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
+                            self.logger.as_ref(),
                             cmd.clone(),
                         )
                         .is_err()
@@ -294,6 +347,7 @@ impl Frontend {
                     if Self::send_command(
                         Some(&mut self.to_cnc),
                         &self.command_tx,
+                        self.logger.as_ref(),
                         "!".to_string(),
                     )
                     .is_err()
@@ -305,6 +359,7 @@ impl Frontend {
                     if Self::send_command(
                         Some(&mut self.to_cnc),
                         &self.command_tx,
+                        self.logger.as_ref(),
                         "$GB".to_string(),
                     )
                     .is_err()
@@ -316,6 +371,7 @@ impl Frontend {
                     if Self::send_command(
                         Some(&mut self.to_cnc),
                         &self.command_tx,
+                        self.logger.as_ref(),
                         "~".to_string(),
                     )
                     .is_err()
@@ -329,7 +385,14 @@ impl Frontend {
                 (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
                     self.input.clear();
                     self.program_running = false;
-                    if Self::send_command(None, &self.command_tx, Self::ctrl_x()).is_err() {
+                    if Self::send_command(
+                        None,
+                        &self.command_tx,
+                        self.logger.as_ref(),
+                        Self::ctrl_x(),
+                    )
+                    .is_err()
+                    {
                         return false;
                     }
                 }

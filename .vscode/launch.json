@@ -7,22 +7,7 @@
       "request": "launch",
       "preLaunchTask": "rust: cargo build",
       "program": "${workspaceFolder}/target/debug/cnc",
-      "args": ["-p", "/tmp/ttyESP32", "${workspaceFolder}/testdata/example.gcode"],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "stopOnEntry": false,
-      "sourceLanguages": ["rust"],
-      "initCommands": [
-        "settings set target.disable-aslr false"
-      ]
-    },
-    {
-      "name": "fluidNC",
-      "type": "lldb",
-      "request": "launch",
-      "preLaunchTask": "rust: cargo build",
-      "program": "${workspaceFolder}/target/debug/mock",
-      "args": ["-p", "/tmp/ttyV0", "-c","${workspaceFolder}/testdata/fluidnc.yaml"],
+      "args": ["-p", "/tmp/ttyESP32", "-l", "${workspaceFolder}/log.txt", "${workspaceFolder}/testdata/example.gcode"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "stopOnEntry": false,

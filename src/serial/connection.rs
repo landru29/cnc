@@ -70,7 +70,11 @@ impl Client {
                             line_buffer.push(&read_buffer[..bytes_read]);
 
                             for line in line_buffer.by_ref() {
-                                if let Err(e) = serial_tx.send(line.to_string()) {
+                                if line.is_empty() {
+                                    continue
+                                }
+                                
+                                if let Err(e) = serial_tx.send(line) {
                                     eprintln!("Error sending data: {}", e);
                                 }
                             }

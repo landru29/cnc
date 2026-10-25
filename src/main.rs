@@ -1,6 +1,7 @@
 mod application;
 mod display;
 mod grbl;
+mod logging;
 mod serial;
 
 use anyhow::Result;
@@ -8,6 +9,7 @@ use application::routing::Channels;
 use clap::Parser;
 use display::layout::{Frontend, ThreadedFrontend};
 use grbl::program::Program;
+use logging::ErrorLogger;
 
 #[derive(Parser)]
 #[command(name = "workspace")]
@@ -18,12 +20,16 @@ struct Cli {
     #[arg(short = 'b', long, default_value_t = 115200)]
     baudrate: u32,
 
+    #[arg(short = 'l', long)]
+    log_file: Option<String>,
+
     #[arg(trailing_var_arg = true)]
     extras: Vec<String>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let logger = cli.log_file.as_deref().map(ErrorLogger::new).transpose()?;
 
     println!("opening port {}", cli.port);
     println!("baudrate: {}", cli.baudrate);
@@ -54,7 +60,7 @@ fn main() -> Result<()> {
 
     // Create UI
     let mut ui = ThreadedFrontend::new();
-    let mut frontend = Frontend::new(program, cli.port);
+    let mut frontend = Frontend::new(program, cli.port, logger);
     let frontend_command_rx = frontend.take_command_receiver()?;
     let frontend_tx = frontend.tx.clone();
     ui.start(frontend)?;

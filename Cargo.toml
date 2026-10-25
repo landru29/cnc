@@ -18,3 +18,4 @@ serialport = { version = "4.6", default-features = false }
 ctrlc = "3.4"
 ratatui-core = "0.1.2"
 tokio = "1.54.1"
+time = { version = "0.3.55", features = ["formatting", "parsing"] }
