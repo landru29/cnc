@@ -1,19 +1,31 @@
-FROM python:3.13-slim-trixie
+# syntax=docker/dockerfile:1
+FROM python:3.12-slim-bookworm AS build
 
-ARG VERSION=v4.1.1
-ARG LFS_SIZE=0x20000
+ARG FLUIDNC_REF=v4.1.1
+ARG PIO_ENV=noradio
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    git
+      git ca-certificates build-essential \
+ && rm -rf /var/lib/apt/lists/*
 
-RUN pip install platformio
+RUN pip install --no-cache-dir platformio
 
-RUN git clone https://github.com/bdring/FluidNC.git /fluidnc
+RUN git clone --depth 1 --branch ${FLUIDNC_REF} \
+      https://github.com/bdring/FluidNC /fluidnc
+WORKDIR /fluidnc
 
+ARG PLATFORM_SPEC="espressif32@6.10.0"
 
-COPY ./build.sh /build.sh
+RUN sed -i -E "s#^(\s*platform\s*=\s*).*platform-espressif32.*\$#\1${PLATFORM_SPEC}#" platformio.ini \
+ && grep -n 'espressif32' platformio.ini \
+ && pio run -e ${PIO_ENV}
 
-RUN chmod +x /build.sh
+RUN set -e; \
+    mkdir /out; \
+    B=.pio/build/${PIO_ENV}; \
+    cp $B/bootloader.bin $B/partitions.bin $B/firmware.bin /out/; \
+    cp /root/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin /out/; \
+    ls -l /out
 
-ENTRYPOINT ["/build.sh"]
+FROM scratch AS artifacts
+COPY --from=build /out/ /

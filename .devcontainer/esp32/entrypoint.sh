@@ -14,5 +14,5 @@ esptool.py --chip esp32 merge_bin -o /tmp/flash.bin --fill-flash-size 4MB \
 
 exec qemu-system-xtensa -nographic -machine esp32 \
   -drive file=/tmp/flash.bin,if=mtd,format=raw \
-  -serial tcp:0.0.0.0:5555,server,nowait \
+  -serial tcp:0.0.0.0:5555,server,wait \
   -global driver=timer.esp32.timg,property=wdt_disable,value=true
