@@ -216,8 +216,6 @@ impl Frontend {
             if let Ok(Status::RealTime(status)) = line.parse::<Status>() {
                 self.machine_configuration = self.machine_configuration.clone() + status;
 
-                self.to_cnc.push(line);
-
                 if self.program_running 
                     && let Some(prog) = self.gcode.as_mut() 
                     && !prog.end_of_program_reached 

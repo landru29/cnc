@@ -21,8 +21,8 @@ RUN printf 'vscode ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/vscode \
     && chmod 0440 /etc/sudoers.d/vscode \
     && visudo -cf /etc/sudoers.d/vscode
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+COPY connect.sh /connect.sh
+RUN chmod +x /connect.sh
 
 USER vscode
 ENV PATH="/go/bin:${PATH}"

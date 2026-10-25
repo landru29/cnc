@@ -1,13 +1,17 @@
 services:
   dev:
-    build: ./dev
+    build: 
+      context: ./dev
+      dockerfile: Dockerfile
     command: sleep infinity
     volumes:
       - ..:/workspace:cached
     depends_on: [esp32]
 
   esp32:
-    build: ./esp32
+    build: 
+      context: ./esp32
+      dockerfile: Dockerfile
     volumes:
       - ./esp32/firmware:/firmware:ro
       - ./esp32/fs:/fs:ro

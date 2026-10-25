@@ -32,33 +32,26 @@ cargo build --release
 Run the application with the path to your G-code file:
 
 ```bash
-cargo run --release -- /dev/ttyUSB0 path/to/program.gcode
+cargo run --release --bin cnc -- /dev/ttyUSB0 path/to/program.gcode
 ```
 
 The default serial port is `/dev/ttyUSB0` if you do not specify one:
 
 ```bash
-cargo run --release -- path/to/program.gcode
+cargo run --release --bin cnc -- path/to/program.gcode
 ```
 
-## Running a complete program
+## Developpement
 
-The application loads the entire G-code program and lets you process it from the terminal interface. Use the `p` command to advance to the next G-code command. The current command is highlighted while the program is being followed.
+1. Launch the devcontainer.
+2. Inside the devcontainer, launch `/connect.sh`. It creates a node `/tmp/ttyESP` which is an UART.
+3. Launch the application `cargo run --release --bin cnc -- -p /tmp/ttyESP`
 
-> Warning: This application is intended for use with a real CNC only after carefully verifying the machine configuration, connections, limits, tool setup, and program contents. Always ensure that the machine is correctly homed and that the work area is clear before sending commands.
 
-## Keyboard controls
-
-- `p` — process the next G-code command
-- `Backspace` — delete the last character in the command line
-- `Enter` — send the entered command
-- `Ctrl+D` — exit the application
-
-## Development
+## Testing
 
 ```bash
 cargo test
-cargo run --release -- /dev/ttyUSB0 testdata/example.gcode
 ```
 
 ## License
