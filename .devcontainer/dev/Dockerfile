@@ -6,6 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     socat \
     psmisc \
+    socat \
+    picocom \
+    pkg-config \
+    libudev-dev \
     git
 
 RUN groupadd --gid 1000 vscode \
@@ -17,6 +21,8 @@ RUN printf 'vscode ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/vscode \
     && chmod 0440 /etc/sudoers.d/vscode \
     && visudo -cf /etc/sudoers.d/vscode
 
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 USER vscode
 ENV PATH="/go/bin:${PATH}"

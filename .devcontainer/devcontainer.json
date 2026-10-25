@@ -1,13 +1,11 @@
-// For format details, see https://aka.ms/devcontainer.json. For config options, see the
-// README at: https://github.com/devcontainers/templates/tree/main/src/go-postgres
 {
-	"name": "graph",
-	"dockerComposeFile": "docker-compose.yaml",
-	"service": "dev",
-	"workspaceFolder": "/workspace",
-	"shutdownAction": "none",
-	// Configure tool-specific properties.
-	"customizations": {
+  "name": "rust + esp32-emu",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "dev",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "postStartCommand": "nohup socat pty,link=/tmp/ttyESP32,raw,echo=0 tcp:esp32:5555,forever,interval=1 >/tmp/socat.log 2>&1 &",
+  "customizations": {
 		// Configure properties specific to VS Code.
 		"vscode": {
 			// Set *default* container specific settings.json values on container create.
@@ -26,6 +24,5 @@
 				"rust-lang.rust-analyzer"
 			]
 		}
-	},
-	"postStartCommand": ["/workspace/.devcontainer/post-create.sh"],
+	}
 }

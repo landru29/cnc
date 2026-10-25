@@ -1,0 +1,17 @@
+services:
+  dev:
+    build: ./dev
+    command: sleep infinity
+    volumes:
+      - ..:/workspace:cached
+    depends_on: [esp32]
+
+  esp32:
+    build: ./esp32
+    volumes:
+      - ./esp32/firmware:/firmware:ro
+      - ./esp32/fs:/fs:ro
+    environment:
+      LFS_OFFSET: "0x3d0000"
+      LFS_SIZE: "0x20000"
+    expose: ["5555"]
