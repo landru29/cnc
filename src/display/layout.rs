@@ -1,5 +1,12 @@
 use crate::grbl::{
-    configuration::Configuration, helper::{Helper, Lang}, machine::MachineConfig, program::Program, status::{Mode, State::Alarm, Status},
+    configuration::Configuration, helper::Helper, 
+    machine::MachineConfig, 
+    program::Program, 
+    status::{
+        Mode, 
+        State::Alarm, 
+        Status,
+    },
 };
 use crate::logging::ErrorLogger;
 use anyhow::Result as AnyhowResult;
@@ -166,8 +173,13 @@ impl Frontend {
                 rows[3].y,
             ));
 
+            let helper_line = self
+                .command_helper
+                .get(self.input.as_str())
+                .map(|help| tui_markdown::from_str(help))
+                .unwrap_or_default();
             f.render_widget(
-                Paragraph::new(if let Some(help) = self.command_helper.get(self.input.as_str()) {help.to_string()} else {"".to_string()}).block(Block::default().borders(Borders::ALL)),
+                Paragraph::new(helper_line).block(Block::default().borders(Borders::ALL)),
                 rows[2],
             );
 

@@ -1,235 +1,235 @@
 G0: |
-  ### **G0 – Positionnement rapide**
+  # G0 – Positionnement rapide
   Déplace l'outil vers une position spécifiée à la vitesse maximale (déplacement rapide).
   **Exemple :** `G0 X10 Y20 Z5`
 
 G1: |
-  ### **G1 – Interpolation linéaire**
+  # G1 – Interpolation linéaire
   Déplace l'outil en ligne droite vers une position spécifiée à une vitesse contrôlée.
   **Exemple :** `G1 X10 Y20 F100` (F = vitesse d'avance en mm/min ou pouces/min)
 
 G2: |
-  ### **G2 – Interpolation circulaire (sens horaire)**
+  # G2 – Interpolation circulaire (sens horaire)
   Déplace l'outil en arc de cercle dans le sens horaire vers une position spécifiée.
   **Exemple :** `G2 X10 Y20 I5 J0` (I, J = décalage du centre par rapport au point de départ)
 
 G3: |
-  ### **G3 – Interpolation circulaire (sens anti-horaire)**
+  # G3 – Interpolation circulaire (sens anti-horaire)
   Déplace l'outil en arc de cercle dans le sens anti-horaire vers une position spécifiée.
   **Exemple :** `G3 X10 Y20 I5 J0`
 
 G4: |
-  ### **G4 – Temps d'arrêt (Dwell)**
+  # G4 – Temps d'arrêt (Dwell)
   Met en pause la machine pendant une durée spécifiée (en millisecondes ou secondes).
   **Exemple :** `G4 P1000` (Pause de 1000 millisecondes)
 
 G10: |
-  ### **G10 – Définir le décalage du système de coordonnées**
+  # G10 – Définir le décalage du système de coordonnées
   Définit un décalage pour le système de coordonnées de l'espace de travail.
   **Exemple :** `G10 L2 P1 X10 Y20` (L2 = espace de travail, P1 = index du système de coordonnées)
 
 G17: |
-  ### **G17 – Sélection du plan XY**
+  # G17 – Sélection du plan XY
   Sélectionne le plan XY pour l'interpolation circulaire (G2/G3).
   **Exemple :** `G17`
 
 G18: |
-  ### **G18 – Sélection du plan XZ**
+  # G18 – Sélection du plan XZ
   Sélectionne le plan XZ pour l'interpolation circulaire (G2/G3).
   **Exemple :** `G18`
 
 G19: |
-  ### **G19 – Sélection du plan YZ**
+  # G19 – Sélection du plan YZ
   Sélectionne le plan YZ pour l'interpolation circulaire (G2/G3).
   **Exemple :** `G19`
 
 G20: |
-  ### **G20 – Unités en pouces**
+  # G20 – Unités en pouces
   Définit le système d'unités en pouces.
   **Exemple :** `G20`
 
 G21: |
-  ### **G21 – Unités en millimètres**
+  # G21 – Unités en millimètres
   Définit le système d'unités en millimètres.
   **Exemple :** `G21`
 
 G28: |
-  ### **G28 – Retour à la position d'origine**
+  # G28 – Retour à la position d'origine
   Déplace la machine vers sa position d'origine (définie par les interrupteurs de fin de course).
   **Exemple :** `G28`
 
 G30: |
-  ### **G30 – Retour à la position d'origine secondaire**
+  # G30 – Retour à la position d'origine secondaire
   Déplace la machine vers une position d'origine secondaire (si configurée).
   **Exemple :** `G30`
 
 G38.2: |
-  ### **G38.2 – Palpage vers la pièce**
+  # G38.2 – Palpage vers la pièce
   Palpe vers la pièce jusqu'à ce qu'un contact soit détecté.
   **Exemple :** `G38.2 Z-10 F10`
 
 G38.3: |
-  ### **G38.3 – Palpage à l'écart de la pièce**
+  # G38.3 – Palpage à l'écart de la pièce
   Palpe à l'écart de la pièce jusqu'à ce que le contact soit perdu.
   **Exemple :** `G38.3 Z10 F10`
 
 G40: |
-  ### **G40 – Désactiver la compensation du rayon de l'outil**
+  # G40 – Désactiver la compensation du rayon de l'outil
   Désactive la compensation du rayon de l'outil.
   **Exemple :** `G40`
 
 G43: |
-  ### **G43 – Compensation de longueur d'outil (positive)**
+  # G43 – Compensation de longueur d'outil (positive)
   Applique une compensation positive de la longueur de l'outil.
   **Exemple :** `G43 H1` (H1 = index de compensation d'outil)
 
 G49: |
-  ### **G49 – Annuler la compensation de longueur d'outil**
+  # G49 – Annuler la compensation de longueur d'outil
   Annule la compensation de longueur d'outil.
   **Exemple :** `G49`
 
 G53: |
-  ### **G53 – Déplacement en coordonnées absolues**
+  # G53 – Déplacement en coordonnées absolues
   Déplace en coordonnées absolues de la machine (ignore les décalages de travail).
   **Exemple :** `G53 G0 X10 Y20`
 
 G54: |
-  ### **G54 – Système de coordonnées de travail 1**
+  # G54 – Système de coordonnées de travail 1
   Sélectionne le système de coordonnées de travail 1 (WCS1).
   **Exemple :** `G54`
 
 G55: |
-  ### **G55 – Système de coordonnées de travail 2**
+  # G55 – Système de coordonnées de travail 2
   Sélectionne le système de coordonnées de travail 2 (WCS2).
   **Exemple :** `G55`
 
 G56: |
-  ### **G56 – Système de coordonnées de travail 3**
+  # G56 – Système de coordonnées de travail 3
   Sélectionne le système de coordonnées de travail 3 (WCS3).
   **Exemple :** `G56`
 
 G57: |
-  ### **G57 – Système de coordonnées de travail 4**
+  # G57 – Système de coordonnées de travail 4
   Sélectionne le système de coordonnées de travail 4 (WCS4).
   **Exemple :** `G57`
 
 G58: |
-  ### **G58 – Système de coordonnées de travail 5**
+  # G58 – Système de coordonnées de travail 5
   Sélectionne le système de coordonnées de travail 5 (WCS5).
   **Exemple :** `G58`
 
 G59: |
-  ### **G59 – Système de coordonnées de travail 6**
+  # G59 – Système de coordonnées de travail 6
   Sélectionne le système de coordonnées de travail 6 (WCS6).
   **Exemple :** `G59`
 
 G61: |
-  ### **G61 – Mode de trajectoire exacte**
+  # G61 – Mode de trajectoire exacte
   Active le mode de trajectoire exacte (par défaut dans GRBL).
   **Exemple :** `G61`
 
 G64: |
-  ### **G64 – Mode de trajectoire continue**
+  # G64 – Mode de trajectoire continue
   Active le mode de trajectoire continue (mouvement plus fluide aux angles).
   **Exemple :** `G64`
 
 G80: |
-  ### **G80 – Annuler le mode de mouvement**
+  # G80 – Annuler le mode de mouvement
   Annule tout mode de mouvement actif (par exemple, cycles enregistrés).
   **Exemple :** `G80`
 
 G90: |
-  ### **G90 – Positionnement absolu**
+  # G90 – Positionnement absolu
   Définit le positionnement en coordonnées absolues.
   **Exemple :** `G90`
 
 G91: |
-  ### **G91 – Positionnement relatif**
+  # G91 – Positionnement relatif
   Définit le positionnement en coordonnées relatives (incrémentielles).
   **Exemple :** `G91`
 
 G92: |
-  ### **G92 – Définir la position actuelle**
+  # G92 – Définir la position actuelle
   Définit la position actuelle à une coordonnée spécifiée.
   **Exemple :** `G92 X0 Y0 Z0`
 
 G93: |
-  ### **G93 – Mode de vitesse d'avance en temps inverse**
+  # G93 – Mode de vitesse d'avance en temps inverse
   Définit la vitesse d'avance en mode temps inverse (peu utilisé dans GRBL).
   **Exemple :** `G93 F10`
 
 G94: |
-  ### **G94 – Mode de vitesse d'avance (unités par minute)**
+  # G94 – Mode de vitesse d'avance (unités par minute)
   Définit le mode de vitesse d'avance en unités par minute (par défaut dans GRBL).
   **Exemple :** `G94`
 
 M0: |
-  ### **M0 – Pause du programme**
+  # M0 – Pause du programme
   Met en pause le programme jusqu'à ce que l'utilisateur le reprenne.
   **Exemple :** `M0`
 
 M2: |
-  ### **M2 – Fin du programme**
+  # M2 – Fin du programme
   Termine le programme et réinitialise la machine.
   **Exemple :** `M2`
 
 M3: |
-  ### **M3 – Démarrage de la broche (sens horaire)**
+  # M3 – Démarrage de la broche (sens horaire)
   Démarre la broche dans le sens horaire.
   **Exemple :** `M3 S1000` (S = vitesse de la broche en tr/min)
 
 M4: |
-  ### **M4 – Démarrage de la broche (sens anti-horaire)**
+  # M4 – Démarrage de la broche (sens anti-horaire)
   Démarre la broche dans le sens anti-horaire.
   **Exemple :** `M4 S1000`
 
 M5: |
-  ### **M5 – Arrêt de la broche**
+  # M5 – Arrêt de la broche
   Arrête la broche.
   **Exemple :** `M5`
 
 M6: |
-  ### **M6 – Changement d'outil**
+  # M6 – Changement d'outil
   Change l'outil (si pris en charge par la machine).
   **Exemple :** `M6 T1` (T1 = numéro de l'outil)
 
 M7: |
-  ### **M7 – Activation du liquide de refroidissement (brouillard)**
+  # M7 – Activation du liquide de refroidissement (brouillard)
   Active le liquide de refroidissement en mode brouillard.
   **Exemple :** `M7`
 
 M8: |
-  ### **M8 – Activation du liquide de refroidissement (inondation)**
+  # M8 – Activation du liquide de refroidissement (inondation)
   Active le liquide de refroidissement en mode inondation.
   **Exemple :** `M8`
 
 M9: |
-  ### **M9 – Désactivation du liquide de refroidissement**
+  # M9 – Désactivation du liquide de refroidissement
   Désactive tous les liquides de refroidissement.
   **Exemple :** `M9`
 
 M30: |
-  ### **M30 – Fin du programme et réinitialisation**
+  # M30 – Fin du programme et réinitialisation
   Termine le programme et réinitialise la machine (similaire à M2, mais inclut souvent une réinitialisation).
   **Exemple :** `M30`
 
 M100: |
-  ### **M100 – Macro personnalisée (définie par l'utilisateur)**
+  # M100 – Macro personnalisée (définie par l'utilisateur)
   Exécute une macro personnalisée (si définie dans GRBL).
   **Exemple :** `M100`
 
 M114: |
-  ### **M114 – Obtenir la position actuelle**
+  # M114 – Obtenir la position actuelle
   Signale la position actuelle de la machine.
   **Exemple :** `M114`
 
 M119: |
-  ### **M119 – État des interrupteurs de fin de course**
+  # M119 – État des interrupteurs de fin de course
   Signale l'état des interrupteurs de fin de course.
   **Exemple :** `M119`
 
 "$": |
-  ### **$ – Paramètres GRBL**
+  # $ – Paramètres GRBL
   Affiche ou modifie les paramètres GRBL.
   **Exemple :**
   - `$` – Liste tous les paramètres.
@@ -237,66 +237,66 @@ M119: |
   - `$#` – Affiche les paramètres GRBL (par exemple, décalages de l'espace de travail).
 
 "$$": |
-  ### **$$ – Afficher les paramètres GRBL**
+  # $$ – Afficher les paramètres GRBL
   Affiche tous les paramètres actuels de GRBL.
   **Exemple :** `$$`
 
 "$G": |
-  ### **$G – État de l'analyseur G-Code**
+  # $G – État de l'analyseur G-Code
   Affiche l'état actuel de l'analyseur G-Code (par exemple, groupes modaux actifs).
   **Exemple :** `$G`
 
 "$I": |
-  ### **$I – Informations sur la version GRBL**
+  # $I – Informations sur la version GRBL
   Affiche la version et les informations de compilation de GRBL.
   **Exemple :** `$I`
 
 "$N": |
-  ### **$N – Afficher les blocs de démarrage**
+  # $N – Afficher les blocs de démarrage
   Affiche les blocs de démarrage (commandes G-Code exécutées à la mise sous tension).
   **Exemple :** `$N`
 
 "$C": |
-  ### **$C – Vérifier le G-Code**
+  # $C – Vérifier le G-Code
   Vérifie le G-Code dans le tampon pour détecter les erreurs sans l'exécuter.
   **Exemple :** `$C`
 
 "$X": |
-  ### **$X – Réinitialiser GRBL**
+  # $X – Réinitialiser GRBL
   Réinitialise GRBL (similaire à un redémarrage).
   **Exemple :** `$X`
 
 "$H": |
-  ### **$H – Cycle de retour à l'origine**
+  # $H – Cycle de retour à l'origine
   Effectue un cycle de retour à l'origine pour trouver la position d'origine de la machine.
   **Exemple :** `$H`
 
 "$J": |
-  ### **$J – Jogging (déplacement manuel)**
+  # $J – Jogging (déplacement manuel)
   Déplace la machine dans une direction spécifiée.
   **Exemple :** `$J=G91 X10 F100` (Déplace de 10 mm en X à 100 mm/min)
 
 "$RST": |
-  ### **$RST – Réinitialisation complète de GRBL**
+  # $RST – Réinitialisation complète de GRBL
   Réinitialise GRBL à son état par défaut.
   **Exemple :** `$RST`
 
 "$SLP": |
-  ### **$SLP – Mode veille**
+  # $SLP – Mode veille
   Met GRBL en mode veille (si pris en charge).
   **Exemple :** `$SLP`
 
 "~": |
-  ### **~ – Reprendre après une pause**
+  # ~ – Reprendre après une pause
   Reprend un programme en pause (par exemple, après un arrêt d'avance).
   **Exemple :** `~`
 
 "!": |
-  ### **! – Arrêt d'avance (Feed Hold)**
+  # ! – Arrêt d'avance (Feed Hold)
   Met en pause l'opération en cours (arrêt d'avance).
   **Exemple :** `!`
 
 "?": |
-  ### **? – État actuel**
+  # ? – État actuel
   Demande l'état actuel de GRBL (par exemple, "Inactif", "En cours", "En pause").
   **Exemple :** `?`
