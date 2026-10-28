@@ -1,5 +1,5 @@
 use crate::grbl::{
-    configuration::Configuration, machine::MachineConfig, program::Program, status::{Mode, State::Alarm, Status},
+    configuration::Configuration, helper::{Helper, Lang}, machine::MachineConfig, program::Program, status::{Mode, State::Alarm, Status},
 };
 use crate::logging::ErrorLogger;
 use anyhow::Result as AnyhowResult;
@@ -24,11 +24,11 @@ use std::{
     sync::mpsc::{Receiver, Sender, channel},
     time::Duration,
 };
+use crate::logging::Level as LogLevel;
 
 pub struct Frontend {
     program_running: bool,
     gcode: Option<Program>,
-    helper: Vec<String>,
     to_cnc: Vec<String>,
     input: String,
     machine_configuration: Configuration,
@@ -39,6 +39,7 @@ pub struct Frontend {
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
     logger: Option<ErrorLogger>,
+    command_helper: Helper,
 }
 
 pub struct ThreadedFrontend {
@@ -46,13 +47,12 @@ pub struct ThreadedFrontend {
 }
 
 impl Frontend {
-    pub fn new(gcode: Option<Program>, description: String, logger: Option<ErrorLogger>) -> Self {
+    pub fn new(gcode: Option<Program>, description: String, logger: Option<ErrorLogger>, command_helper: Helper) -> Self {
         let (tx, rx) = channel::<String>();
         let (command_tx, command_rx) = channel::<String>();
         Self {
             program_running: false,
             gcode,
-            helper: vec![],
             to_cnc: vec![],
             input: String::new(),
             machine_configuration: Configuration::new(description),
@@ -63,12 +63,13 @@ impl Frontend {
             command_rx: Some(command_rx),
             running: Arc::new(AtomicBool::new(true)),
             logger,
+            command_helper,
         }
     }
 
-    fn log_error(&self, error: impl std::fmt::Display) {
+    fn log(&self, level: LogLevel, error: impl std::fmt::Display) {
         if let Some(logger) = &self.logger {
-            if let Err(log_error) = logger.log_error(&error) {
+            if let Err(log_error) = logger.log(level, &error) {
                 eprintln!("Failed to write frontend error to log file: {log_error}");
             }
         }
@@ -89,7 +90,7 @@ impl Frontend {
                 }
                 if let Err(error) = command_tx.send(cmd) {
                     if let Some(logger) = logger {
-                        if let Err(log_error) = logger.log_error(&error) {
+                        if let Err(log_error) = logger.log(LogLevel::Error, &error) {
                             eprintln!("Failed to write frontend error to log file: {log_error}");
                         }
                     }
@@ -152,14 +153,7 @@ impl Frontend {
                 );
             }
 
-            let helper_lines: Vec<Line> = self.helper
-                .iter()
-                .map(|l| Line::from(l.as_str()))
-                .collect();
-            f.render_widget(
-                Paragraph::new(helper_lines).block(Block::default().borders(Borders::ALL)),
-                rows[2],
-            );
+            
 
             let prompt = "Enter command ";
             let line = Line::from(vec![
@@ -171,6 +165,13 @@ impl Frontend {
                 rows[3].x + (prompt.len() + self.input.chars().count()) as u16,
                 rows[3].y,
             ));
+
+            f.render_widget(
+                Paragraph::new(if let Some(help) = self.command_helper.get(self.input.as_str()) {help.to_string()} else {"".to_string()}).block(Block::default().borders(Borders::ALL)),
+                rows[2],
+            );
+
+            
 
             let mut keys = vec![
                 ("↑/↓", "History"),
@@ -260,16 +261,16 @@ impl Frontend {
                                     }
                                 });
                             }
-                            Err(error) => self.log_error(error),
+                            Err(error) => self.log(LogLevel::Error, error),
                         }
                     }
                 }
                 Ok(Status::Error(code)) => {
-                    self.log_error(format!("GRBL reported error:{code}"));
+                    self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
                     self.to_cnc.push(line);
                 }
                 Ok(Status::Alarm(code)) => {
-                    self.log_error(format!("GRBL reported ALARM:{code}"));
+                    self.log(LogLevel::Error, format!("GRBL reported ALARM:{code}"));
                     self.to_cnc.push(line);
                 }
                 _ => {
@@ -283,7 +284,7 @@ impl Frontend {
         }
 
         if let Err(error) = self.draw() {
-            self.log_error(error);
+            self.log(LogLevel::Error, error);
             self.running.store(false, Ordering::Relaxed);
             return true;
         }
@@ -292,7 +293,7 @@ impl Frontend {
             Ok(false) => return true,
             Ok(true) => {}
             Err(error) => {
-                self.log_error(error);
+                self.log(LogLevel::Error, error);
                 self.running.store(false, Ordering::Relaxed);
                 return true;
             }
@@ -301,7 +302,7 @@ impl Frontend {
         let event = match event::read() {
             Ok(event) => event,
             Err(error) => {
-                self.log_error(error);
+                self.log(LogLevel::Error, error);
                 self.running.store(false, Ordering::Relaxed);
                 return true;
             }

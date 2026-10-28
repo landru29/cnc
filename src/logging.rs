@@ -4,12 +4,28 @@ use std::{
     io::Write,
     path::Path,
     sync::{Arc, Mutex},
+    fmt,
 };
+
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Clone)]
 pub struct ErrorLogger {
     file: Arc<Mutex<File>>,
+}
+
+pub enum Level {
+    Error,
+    Info,
+}
+
+impl fmt::Display for Level {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Error => write!(f, "ERR"),
+            Self::Info => write!(f, "INFO"),
+        }
+    }
 }
 
 impl ErrorLogger {
@@ -25,14 +41,14 @@ impl ErrorLogger {
         })
     }
 
-    pub fn log_error(&self, message: impl std::fmt::Display) -> Result<()> {
+    pub fn log(&self, level: Level, message: impl std::fmt::Display) -> Result<()> {
         let timestamp = OffsetDateTime::now_utc().format(&Rfc3339)?;
         let mut file = self
             .file
             .lock()
             .map_err(|_| anyhow::anyhow!("Log file lock is poisoned"))?;
 
-        writeln!(file, "[{timestamp}] ERROR: {message}")?;
+        writeln!(file, "[{timestamp}] {level}: {message}")?;
         file.flush()?;
         Ok(())
     }
@@ -41,6 +57,7 @@ impl ErrorLogger {
 #[cfg(test)]
 mod tests {
     use super::ErrorLogger;
+    use super::Level;
     use std::{fs, time::SystemTime};
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -54,8 +71,8 @@ mod tests {
             std::env::temp_dir().join(format!("cnc-errors-{}-{timestamp}.log", std::process::id()));
 
         let logger = ErrorLogger::new(&path).unwrap();
-        logger.log_error("first error").unwrap();
-        logger.clone().log_error("second error").unwrap();
+        logger.log(Level::Error,"first error").unwrap();
+        logger.clone().log(Level::Error,"second error").unwrap();
         drop(logger);
 
         let contents = fs::read_to_string(&path).unwrap();

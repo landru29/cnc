@@ -11,6 +11,8 @@ use display::layout::{Frontend, ThreadedFrontend};
 use grbl::program::Program;
 use logging::ErrorLogger;
 
+use crate::grbl::helper::{Helper, Lang};
+
 #[derive(Parser)]
 #[command(name = "workspace")]
 struct Cli {
@@ -25,11 +27,17 @@ struct Cli {
 
     #[arg(trailing_var_arg = true)]
     extras: Vec<String>,
+
+    #[arg(long, default_value_t = "fr".to_string())]
+    lang: String,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let logger = cli.log_file.as_deref().map(ErrorLogger::new).transpose()?;
+
+    let lang: Lang = Lang::from(cli.lang);
+    let command_helper = Helper::new(lang)?;
 
     println!("opening port {}", cli.port);
     println!("baudrate: {}", cli.baudrate);
@@ -60,7 +68,7 @@ fn main() -> Result<()> {
 
     // Create UI
     let mut ui = ThreadedFrontend::new();
-    let mut frontend = Frontend::new(program, cli.port, logger);
+    let mut frontend = Frontend::new(program, cli.port, logger, command_helper);
     let frontend_command_rx = frontend.take_command_receiver()?;
     let frontend_tx = frontend.tx.clone();
     ui.start(frontend)?;
