@@ -23,8 +23,30 @@ The program reads a G-code file, displays its contents in a terminal interface, 
 
 ## Installation
 
+### On your machine
+
 ```bash
 cargo build --release
+```
+
+### For other systems
+
+```bash
+# Compatible Ubuntu 20.04
+# Executable is cocated at target/release/cnc
+make release-ubuntu-20
+
+# Compatible Ubuntu 22.04
+# Executable is cocated at target/release/cnc
+make release-ubuntu-22
+
+# Compatible Ubuntu 24.04
+# Executable is cocated at target/release/cnc
+make release-ubuntu-24
+
+# Compatible Ubuntu 26.04
+# Executable is cocated at target/release/cnc
+make release-ubuntu-26
 ```
 
 ## Usage
