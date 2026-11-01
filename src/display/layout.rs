@@ -11,7 +11,7 @@ use crate::grbl::{
 use crate::logging::ErrorLogger;
 use anyhow::Result as AnyhowResult;
 use anyhow::Result;
-use crossterm::event::KeyModifiers;
+use crossterm::{cursor::MoveTo, event::KeyModifiers, execute, terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -21,10 +21,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
-use std::sync::{
+use std::{io::stdout, sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
-};
+}};
 use std::thread::JoinHandle;
 use std::{
     io::Stdout,
@@ -47,10 +47,12 @@ pub struct Frontend {
     running: Arc<AtomicBool>,
     logger: Option<ErrorLogger>,
     command_helper: Helper,
+    first_run: bool,
 }
 
 pub struct ThreadedFrontend {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<JoinHandle<Terminal<CrosstermBackend<Stdout>>>>,
+    terminal: Option<Terminal<CrosstermBackend<Stdout>>>,
 }
 
 impl Frontend {
@@ -71,6 +73,7 @@ impl Frontend {
             running: Arc::new(AtomicBool::new(true)),
             logger,
             command_helper,
+            first_run: true,
         }
     }
 
@@ -109,10 +112,11 @@ impl Frontend {
         Ok(())
     }
 
-    fn draw(&mut self) -> AnyhowResult<()> {
-        let terminal = self.terminal
-            .as_mut()
-            .ok_or_else(|| anyhow::anyhow!("Application terminal has already been taken"))?;
+    fn draw(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> AnyhowResult<()> {
+        if self.first_run {
+            terminal.clear()?;
+            self.first_run = false;
+        }
 
         terminal.draw(|f| {
             // Vertical: status / panels / helper / prompt
@@ -236,7 +240,7 @@ impl Frontend {
             .ok_or_else(|| anyhow::anyhow!("Application command receiver has already been taken"))
     }
 
-    fn run_iteration(&mut self) -> bool {
+    fn run_iteration(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> bool {
         let lines: Vec<String> = self
             .rx
             .as_ref()
@@ -295,7 +299,7 @@ impl Frontend {
             }
         }
 
-        if let Err(error) = self.draw() {
+        if let Err(error) = self.draw(terminal) {
             self.log(LogLevel::Error, error);
             self.running.store(false, Ordering::Relaxed);
             return true;
@@ -424,7 +428,7 @@ impl Frontend {
 
 impl ThreadedFrontend {
     pub fn new() -> Self {
-        Self { handle: None }
+        Self { handle: None, terminal: None }
     }
 
     pub fn start(&mut self, mut frontend: Frontend) -> Result<()> {
@@ -433,13 +437,28 @@ impl ThreadedFrontend {
         }
         let running = Arc::clone(&frontend.running);
 
+        enable_raw_mode()?;
+        let mut stdout = stdout();
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            Clear(ClearType::All),
+            MoveTo(0, 0)
+        )?;
+
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::new(backend)?;
+        terminal.clear()?;
+
         self.handle = Some(std::thread::spawn(move || {
             while running.load(Ordering::Relaxed) {
-                if !frontend.run_iteration() {
+                if !frontend.run_iteration(&mut terminal) {
                     break;
                 }
             }
+            terminal
         }));
+
         Ok(())
     }
 }
@@ -453,10 +472,15 @@ impl Frontend {
 impl ThreadedFrontend {
     pub fn wait(&mut self) -> Result<()> {
         if let Some(handle) = self.handle.take() {
-            handle
+            self.terminal = Some(handle
                 .join()
-                .map_err(|_| anyhow::anyhow!("UI thread panicked"))?;
+                .map_err(|_| anyhow::anyhow!("UI thread panicked"))?);
         }
+
+        disable_raw_mode()?;
+        execute!(self.terminal.as_mut().unwrap().backend_mut(), LeaveAlternateScreen)?;
+        self.terminal.as_mut().unwrap().show_cursor()?;
+
         Ok(())
     }
 }
