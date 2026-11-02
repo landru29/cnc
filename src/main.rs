@@ -3,6 +3,7 @@ mod display;
 mod grbl;
 mod logging;
 mod serial;
+mod history;
 
 use anyhow::Result;
 use application::routing::Channels;

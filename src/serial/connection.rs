@@ -3,20 +3,22 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use super::feedback::Feedback;
+
 
 pub struct Client {
-    rx: Option<Receiver<String>>,
+    rx: Option<Receiver<Feedback>>,
     pub tx: Sender<String>,
     pub port: Option<Box<dyn serialport::SerialPort>>,
     running: Arc<AtomicBool>,
     pub handle: Option<JoinHandle<()>>,
     command_rx: Option<Receiver<String>>,
-    serial_tx: Sender<String>,
+    serial_tx: Sender<Feedback>,
 }
 
 impl Client {
     pub fn new(path: &str, baudrate: u32, timeout: Duration) -> Result<Self> {
-        let (serial_tx, rx) = channel::<String>();
+        let (serial_tx, rx) = channel::<Feedback>();
         let (tx, command_rx) = channel::<String>();
 
         let port = serialport::new(path, baudrate)
@@ -34,7 +36,7 @@ impl Client {
         })
     }
 
-    pub fn take_receiver(&mut self) -> Result<Receiver<String>> {
+    pub fn take_receiver(&mut self) -> Result<Receiver<Feedback>> {
         self.rx
             .take()
             .ok_or_else(|| anyhow::anyhow!("serial receiver has already been taken"))
@@ -73,8 +75,9 @@ impl Client {
                                 if line.is_empty() {
                                     continue
                                 }
-                                
-                                if let Err(e) = serial_tx.send(line) {
+
+                                let Ok(feedback) = line.parse::<Feedback>();
+                                if let Err(e) = serial_tx.send(feedback) {
                                     eprintln!("Error sending data: {}", e);
                                 }
                             }

@@ -1,21 +1,15 @@
-use crate::grbl::{
-    configuration::Configuration, helper::Helper, 
-    machine::MachineConfig, 
-    program::Program, 
-    status::{
-        Mode, 
-        State::Alarm, 
-        Status,
+use crate::{grbl::{
+    configuration::Configuration, helper::Helper, program::Program, status::{
+        Mode, State::Alarm, Status,
     },
-};
+}, serial::feedback::Feedback};
 use crate::logging::ErrorLogger;
 use anyhow::Result as AnyhowResult;
 use anyhow::Result;
-use crossterm::{cursor::MoveTo, event::KeyModifiers, execute, terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
+use crossterm::{cursor::MoveTo, execute, terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode}};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    crossterm::event::{self, Event, KeyCode, KeyEventKind},
     layout::{Constraint, Direction, Layout, Position, Alignment},
     style::{Color, Style, Modifier},
     text::{Line, Span},
@@ -29,25 +23,25 @@ use std::thread::JoinHandle;
 use std::{
     io::Stdout,
     sync::mpsc::{Receiver, Sender, channel},
-    time::Duration,
 };
 use crate::logging::Level as LogLevel;
+use super::keys::{EventManager, KeyEvent};
 
 pub struct Frontend {
     program_running: bool,
     gcode: Option<Program>,
     to_cnc: Vec<String>,
-    input: String,
+    event_manager: EventManager,
     machine_configuration: Configuration,
-    terminal: Option<Terminal<CrosstermBackend<Stdout>>>,
-    pub tx: Sender<String>,
+    pub tx: Sender<Feedback>,
     command_tx: Sender<String>,
-    rx: Option<Receiver<String>>,
+    rx: Option<Receiver<Feedback>>,
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
     logger: Option<ErrorLogger>,
     command_helper: Helper,
     first_run: bool,
+    cursor_position: u16,
 }
 
 pub struct ThreadedFrontend {
@@ -57,15 +51,21 @@ pub struct ThreadedFrontend {
 
 impl Frontend {
     pub fn new(gcode: Option<Program>, description: String, logger: Option<ErrorLogger>, command_helper: Helper) -> Self {
-        let (tx, rx) = channel::<String>();
+        let (tx, rx) = channel::<Feedback>();
         let (command_tx, command_rx) = channel::<String>();
+
+        if let Some(log) = &logger {
+            if let Err(log_error) = log.log(LogLevel::Info, "Starting frontend") {
+                eprintln!("Failed to write frontend error to log file: {log_error}");
+            }
+        }
+
         Self {
             program_running: false,
             gcode,
             to_cnc: vec![],
-            input: String::new(),
+            event_manager: EventManager::new(),
             machine_configuration: Configuration::new(description),
-            terminal: Some(ratatui::init()),
             tx,
             command_tx,
             rx: Some(rx),
@@ -74,6 +74,7 @@ impl Frontend {
             logger,
             command_helper,
             first_run: true,
+            cursor_position: 0,
         }
     }
 
@@ -169,25 +170,23 @@ impl Frontend {
             let prompt = "Enter command ";
             let line = Line::from(vec![
                 Span::styled(prompt, Style::default().fg(Color::Yellow)),
-                Span::raw(self.input.as_str()),
+                Span::raw(<&str>::from(&self.event_manager)),
             ]);
             f.render_widget(Paragraph::new(line), rows[3]);
             f.set_cursor_position(Position::new(
-                rows[3].x + (prompt.len() + self.input.chars().count()) as u16,
+                rows[3].x + prompt.len() as u16 + self.cursor_position,
                 rows[3].y,
             ));
 
             let helper_line = self
                 .command_helper
-                .get(self.input.as_str())
+                .get((&self.event_manager).into())
                 .map(|help| tui_markdown::from_str(help))
                 .unwrap_or_default();
             f.render_widget(
                 Paragraph::new(helper_line).block(Block::default().borders(Borders::ALL)),
                 rows[2],
             );
-
-            
 
             let mut keys = vec![
                 ("↑/↓", "History"),
@@ -241,7 +240,7 @@ impl Frontend {
     }
 
     fn run_iteration(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> bool {
-        let lines: Vec<String> = self
+        let lines: Vec<Feedback> = self
             .rx
             .as_ref()
             .expect("Frontend receiver must be available while running")
@@ -249,54 +248,58 @@ impl Frontend {
             .collect();
 
         for line in lines {
-            match line.parse::<Status>() {
-                Ok(Status::RealTime(status)) => {
-                    self.machine_configuration = self.machine_configuration.clone() + status;
+            match line {
+                Feedback::Status(status) => {
+                    match status {
+                        Status::RealTime(status) => {
+                            self.machine_configuration = self.machine_configuration.clone() + status;
 
-                    if self.program_running
-                        && let Some(prog) = self.gcode.as_mut()
-                        && !prog.end_of_program_reached
-                        && let Some(buffer) = self.machine_configuration.status.buffer.as_ref()
-                        && let Some(state) = self.machine_configuration.status.state.clone()
-                        && state != Alarm
-                    {
-                        self.to_cnc.push("------------".to_string());
-                        match prog.process(buffer.lines as usize) {
-                            Ok(data) => {
-                                data.iter().for_each(|command| {
-                                    self.to_cnc.push(command.clone());
-                                    if Self::send_command(
-                                        None,
-                                        &self.command_tx,
-                                        self.logger.as_ref(),
-                                        command.clone(),
-                                    )
-                                    .is_err()
-                                    {
-                                        self.program_running = false;
+                            if self.program_running
+                                && let Some(prog) = self.gcode.as_mut()
+                                && !prog.end_of_program_reached
+                                && let Some(buffer) = self.machine_configuration.status.buffer.as_ref()
+                                && let Some(state) = self.machine_configuration.status.state.clone()
+                                && state != Alarm
+                            {
+                                self.to_cnc.push("------------".to_string());
+                                match prog.process(buffer.lines as usize) {
+                                    Ok(data) => {
+                                        data.iter().for_each(|command| {
+                                            self.to_cnc.push(command.clone());
+                                            if Self::send_command(
+                                                None,
+                                                &self.command_tx,
+                                                self.logger.as_ref(),
+                                                command.clone(),
+                                            )
+                                            .is_err()
+                                            {
+                                                self.program_running = false;
+                                            }
+                                        });
                                     }
-                                });
+                                    Err(error) => self.log(LogLevel::Error, error),
+                                }
                             }
-                            Err(error) => self.log(LogLevel::Error, error),
                         }
-                    }
-                }
-                Ok(Status::Error(code)) => {
-                    self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
-                    self.to_cnc.push(line);
-                }
-                Ok(Status::Alarm(code)) => {
-                    self.log(LogLevel::Error, format!("GRBL reported ALARM:{code}"));
-                    self.to_cnc.push(line);
-                }
-                _ => {
-                    if let Ok(machine_config) = line.parse::<MachineConfig>() {
-                        self.machine_configuration = self.machine_configuration.clone() + machine_config;
-                    } else if line.to_ascii_lowercase().trim() != "ok" {
-                        self.to_cnc.push(line);
-                    }
-                }
-            }
+                        Status::Error(code) => {
+                            self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
+                            self.to_cnc.push(format!("!ERROR! {code}"));
+                        }
+                        Status::Alarm(code) => {
+                            self.log(LogLevel::Error, format!("GRBL reported ALARM:{code}"));
+                            self.to_cnc.push(format!("!ALARM! {code}"));
+                        }
+                        _ => {}
+                    };
+                },
+                Feedback::MachineConfig(machine_config) => {
+                    self.machine_configuration = self.machine_configuration.clone() + machine_config;
+                },
+                Feedback::Message(msg) => {
+                    self.to_cnc.push(msg);
+                },
+            };
         }
 
         if let Err(error) = self.draw(terminal) {
@@ -305,121 +308,96 @@ impl Frontend {
             return true;
         }
 
-        match event::poll(Duration::from_millis(50)) {
-            Ok(false) => return true,
-            Ok(true) => {}
-            Err(error) => {
-                self.log(LogLevel::Error, error);
-                self.running.store(false, Ordering::Relaxed);
-                return true;
-            }
-        }
-
-        let event = match event::read() {
-            Ok(event) => event,
-            Err(error) => {
-                self.log(LogLevel::Error, error);
-                self.running.store(false, Ordering::Relaxed);
-                return true;
-            }
-        };
-
-        if let Event::Key(k) = event {
-            if k.kind != KeyEventKind::Press {
-                return true;
-            }
-            match (k.code, k.modifiers) {
-                (KeyCode::Enter, KeyModifiers::NONE) => {
-                    let cmd = std::mem::take(&mut self.input);
-                    if Self::send_command(
-                        Some(&mut self.to_cnc),
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        cmd,
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                }
-                (KeyCode::F(4), KeyModifiers::NONE) => { // Stop
-                    self.program_running = true;
-                    for cmd in vec!["!".to_string(), Self::ctrl_x()].iter() {
+        if let Ok(opt_event) = self.event_manager.iterate() {
+            if let Some(event) = opt_event {
+                match event {
+                    KeyEvent::Command(cmd) => {
+                        self.cursor_position = 0;
                         if Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
                             self.logger.as_ref(),
-                            cmd.clone(),
+                            cmd,
                         )
                         .is_err()
                         {
-                            break;
+                            return false;
                         }
+                    },
+                    KeyEvent::ProgramStop => {
+                        self.program_running = true;
+                        for cmd in vec!["!".to_string(), Self::ctrl_x()].iter() {
+                            if Self::send_command(
+                                Some(&mut self.to_cnc),
+                                &self.command_tx,
+                                self.logger.as_ref(),
+                                cmd.clone(),
+                            )
+                            .is_err()
+                            {
+                                break;
+                            }
+                        }
+                    },
+                    KeyEvent::ProgramRun => {
+                        self.program_running = true;
+                    },
+                    KeyEvent::ProgramPause => {
+                        if Self::send_command(
+                            Some(&mut self.to_cnc),
+                            &self.command_tx,
+                            self.logger.as_ref(),
+                            "!".to_string(),
+                        )
+                        .is_err()
+                        {
+                            return false;
+                        }
+                    },
+                    KeyEvent::ProgramModeToggle => {
+                        if Self::send_command(
+                            Some(&mut self.to_cnc),
+                            &self.command_tx,
+                            self.logger.as_ref(),
+                            "$GB".to_string(),
+                        )
+                        .is_err()
+                        {
+                            return false;
+                        }
+                    },
+                    KeyEvent::ProgramStepOver => {
+                        if Self::send_command(
+                            Some(&mut self.to_cnc),
+                            &self.command_tx,
+                            self.logger.as_ref(),
+                            "~".to_string(),
+                        )
+                        .is_err()
+                        {
+                            return false;
+                        }
+                    },
+                    KeyEvent::AppExit => {
+                        self.running.store(false, Ordering::Relaxed);
+                    },
+                    KeyEvent::DeviceReset => {
+                        self.program_running = false;
+                        if Self::send_command(
+                            None,
+                            &self.command_tx,
+                            self.logger.as_ref(),
+                            Self::ctrl_x(),
+                        )
+                        .is_err()
+                        {
+                            return false;
+                        }
+                    },
+                    KeyEvent::CursorAt(position) => {
+                        self.cursor_position = position;
                     }
-                }
-                (KeyCode::F(5), KeyModifiers::NONE) => { // Run
-                    self.program_running = true;
-                }
-                (KeyCode::F(6), KeyModifiers::NONE) => { // Pause
-                    if Self::send_command(
-                        Some(&mut self.to_cnc),
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        "!".to_string(),
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                }
-                (KeyCode::F(7), KeyModifiers::NONE) => { // Step mode / prog mode
-                    if Self::send_command(
-                        Some(&mut self.to_cnc),
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        "$GB".to_string(),
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                }
-                (KeyCode::F(8), KeyModifiers::NONE) => { // Step Over
-                    if Self::send_command(
-                        Some(&mut self.to_cnc),
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        "~".to_string(),
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                }
-                (KeyCode::Char('d'), KeyModifiers::CONTROL) => {
-                    self.running.store(false, Ordering::Relaxed);
-                }
-                (KeyCode::Char('x'), KeyModifiers::CONTROL) => {
-                    self.input.clear();
-                    self.program_running = false;
-                    if Self::send_command(
-                        None,
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        Self::ctrl_x(),
-                    )
-                    .is_err()
-                    {
-                        return false;
-                    }
-                }
-                (KeyCode::Backspace, KeyModifiers::NONE) => {
-                    self.input.pop();
-                }
-                (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                    self.input.push(c.to_ascii_uppercase())
-                }
-                _ => {}
+                };
             }
         }
         true

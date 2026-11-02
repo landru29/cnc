@@ -11,22 +11,22 @@ stepping:
 axes:
   shared_stepper_disable_pin: NO_PIN
   x:
-    steps_per_mm: 10
-    max_rate_mm_per_min: 600
+    steps_per_mm: 2
+    max_rate_mm_per_min: 120
     motor0:
       stepstick:
         step_pin: gpio.4
         direction_pin: gpio.16:low
   y:
-    steps_per_mm: 10
-    max_rate_mm_per_min: 600
+    steps_per_mm: 2
+    max_rate_mm_per_min: 120
     motor0:
       stepstick:
         step_pin: gpio.17
         direction_pin: gpio.21:high
   z:
-    steps_per_mm: 10
-    max_rate_mm_per_min: 600
+    steps_per_mm: 2
+    max_rate_mm_per_min: 120
     motor0:
       stepstick:
         step_pin: gpio.18

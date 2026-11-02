@@ -2,19 +2,21 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
+use crate::serial::feedback::Feedback;
+
 pub struct Channels {
-    pub serial_rx: Receiver<String>,
+    pub serial_rx: Receiver<Feedback>,
     pub serial_tx: Sender<String>,
     pub ui_rx: Receiver<String>,
-    pub ui_tx: Sender<String>,
+    pub ui_tx: Sender<Feedback>,
 }
 
 impl Channels {
     pub fn new(
-        serial_rx: Receiver<String>,
+        serial_rx: Receiver<Feedback>,
         serial_tx: Sender<String>,
         ui_rx: Receiver<String>,
-        ui_tx: Sender<String>,
+        ui_tx: Sender<Feedback>,
     ) -> Self {
         Self { serial_rx, serial_tx, ui_rx, ui_tx }
     }

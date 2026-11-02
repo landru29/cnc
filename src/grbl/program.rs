@@ -59,40 +59,6 @@ impl Program {
         }
     }
 
-    pub fn load(self, lines: usize, buffer_size: usize) -> Vec<String> {
-        let mut current_cursor = self.cursor;
-        let mut output: Vec<String> = vec![];
-        let mut remaining_buffer = buffer_size;
-
-        for _ in 0..lines {
-            current_cursor +=1;
-            
-            if current_cursor>= self.code.len() {
-                break;
-            }
-
-            while current_cursor<self.code.len() && !Self::is_code_line(&self.code[current_cursor]) {
-                current_cursor += 1;
-            }
-
-            let current_line = Self::clean_code_line(self.code[current_cursor].clone());
-            if remaining_buffer>current_line.len() {
-                remaining_buffer -= current_line.len();
-                output.push(current_line);
-            }
-        }
-
-        output
-    }
-
-    pub fn clean_code_line(line: String) -> String {
-        let comment_start = line
-            .find(';')
-            .or_else(|| line.find('%'))
-            .unwrap_or(line.len());
-        line[..comment_start].trim().to_string()
-    }
-
     pub fn is_code_line(line: &str) -> bool {
         !line.trim().starts_with(";")
             && !line.trim().starts_with("%")
@@ -262,38 +228,4 @@ mod tests {
         assert_eq!(window, vec!["g", "h", "i", "j"]);
         assert_eq!(effective, 3);
     }
-
-    #[test]
-    fn clean_line_without_comment() {
-        assert_eq!(Program::clean_code_line("G0 X10 Y20".to_string()), "G0 X10 Y20");
-    }
-
-    #[test]
-    fn clean_line_strips_semicolon_comment() {
-        assert_eq!(
-            Program::clean_code_line("G0 X10 ; move to origin".to_string()),
-            "G0 X10"
-        );
-    }
-
-    #[test]
-    fn clean_line_strips_percent_comment() {
-        assert_eq!(
-            Program::clean_code_line("G0 X10 % program start".to_string()),
-            "G0 X10"
-        );
-    }
-
-    #[test]
-    fn clean_line_comment_only() {
-        assert_eq!(Program::clean_code_line("; full comment".to_string()), "");
-        assert_eq!(Program::clean_code_line("% full comment".to_string()), "");
-    }
-
-    #[test]
-    fn clean_line_trims_whitespace() {
-        assert_eq!(Program::clean_code_line("  G0 X10  ".to_string()), "G0 X10");
-    }
 }
-
-

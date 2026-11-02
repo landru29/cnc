@@ -22,7 +22,7 @@ RUN printf 'vscode ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/vscode \
     && visudo -cf /etc/sudoers.d/vscode
 
 COPY connect.sh /connect.sh
-RUN chmod +x /connect.sh
+RUN chmod a+rx /connect.sh
 
 USER vscode
 ENV PATH="/go/bin:${PATH}"
