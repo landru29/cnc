@@ -1,0 +1,302 @@
+G0: |
+  # **G0 – Posicionamiento rápido**
+  Desplazarse a una posición especificada a la máxima velocidad posible (desplazamiento rápido).
+  **Ejemplo:** `G0 X10 Y20 Z5`
+
+G1: |
+  # **G1 – Interpolación lineal**
+  Desplazarse en línea recta hasta una posición especificada a una velocidad de avance controlada.
+  **Ejemplo:** `G1 X10 Y20 F100` (F = velocidad de avance en mm/min o pulgadas/min)
+
+G2: |
+  # **G2 – Interpolación circular (sentido horario)**
+  Desplazarse siguiendo un arco circular en sentido horario hasta una posición especificada.
+  **Ejemplo:** `G2 X10 Y20 I5 J0` (I, J = desplazamiento del centro respecto al punto inicial)
+
+G3: |
+  # **G3 – Interpolación circular (sentido antihorario)**
+  Desplazarse siguiendo un arco circular en sentido antihorario hasta una posición especificada.
+  **Ejemplo:** `G3 X10 Y20 I5 J0`
+
+G4: |
+  # **G4 – Pausa**
+  Pausar la máquina durante un período de tiempo especificado (en milisegundos o segundos).
+  **Ejemplo:** `G4 P1000` (Pausa de 1000 milisegundos)
+
+G10: |
+  # **G10 – Establecer el desplazamiento de coordenadas de trabajo**
+  Establecer un desplazamiento para un sistema de coordenadas de trabajo.
+  **Ejemplo:** `G10 L2 P1 X10 Y20` (L2 = espacio de trabajo, P1 = índice del sistema de coordenadas)
+
+G17: |
+  # **G17 – Selección del plano XY**
+  Seleccionar el plano XY para la interpolación circular (G2/G3).
+  **Ejemplo:** `G17`
+
+G18: |
+  # **G18 – Selección del plano XZ**
+  Seleccionar el plano XZ para la interpolación circular (G2/G3).
+  **Ejemplo:** `G18`
+
+G19: |
+  # **G19 – Selección del plano YZ**
+  Seleccionar el plano YZ para la interpolación circular (G2/G3).
+  **Ejemplo:** `G19`
+
+G20: |
+  # **G20 – Unidades en pulgadas**
+  Establecer el sistema de unidades en pulgadas.
+  **Ejemplo:** `G20`
+
+G21: |
+  # **G21 – Unidades en milímetros**
+  Establecer el sistema de unidades en milímetros.
+  **Ejemplo:** `G21`
+
+G28: |
+  # **G28 – Retorno al origen**
+  Desplazar la máquina hasta su posición de origen (definida mediante los interruptores de referencia).
+  **Ejemplo:** `G28`
+
+G30: |
+  # **G30 – Retorno al origen secundario**
+  Desplazar la máquina hasta una posición de origen secundaria (si está configurada).
+  **Ejemplo:** `G30`
+
+G38.2: |
+  # **G38.2 – Sondaje hacia la pieza**
+  Realizar un sondaje hacia la pieza hasta detectar el contacto.
+  **Ejemplo:** `G38.2 Z-10 F10`
+
+G38.3: |
+  # **G38.3 – Sondaje alejándose de la pieza**
+  Realizar un sondaje alejándose de la pieza hasta que se pierda el contacto.
+  **Ejemplo:** `G38.3 Z10 F10`
+
+G40: |
+  # **G40 – Desactivación de la compensación del radio de la herramienta**
+  Desactivar la compensación del radio de la herramienta.
+  **Ejemplo:** `G40`
+
+G43: |
+  # **G43 – Compensación positiva de la longitud de la herramienta**
+  Aplicar una compensación positiva de la longitud de la herramienta.
+  **Ejemplo:** `G43 H1` (H1 = índice de compensación de la herramienta)
+
+G49: |
+  # **G49 – Cancelación de la compensación de longitud de la herramienta**
+  Cancelar la compensación de longitud de la herramienta.
+  **Ejemplo:** `G49`
+
+G53: |
+  # **G53 – Desplazamiento en coordenadas absolutas**
+  Desplazarse utilizando las coordenadas absolutas de la máquina (ignorando los desplazamientos de trabajo).
+  **Ejemplo:** `G53 G0 X10 Y20`
+
+G54: |
+  # **G54 – Sistema de coordenadas de trabajo 1**
+  Seleccionar el sistema de coordenadas de trabajo 1 (WCS1).
+  **Ejemplo:** `G54`
+
+G55: |
+  # **G55 – Sistema de coordenadas de trabajo 2**
+  Seleccionar el sistema de coordenadas de trabajo 2 (WCS2).
+  **Ejemplo:** `G55`
+
+G56: |
+  # **G56 – Sistema de coordenadas de trabajo 3**
+  Seleccionar el sistema de coordenadas de trabajo 3 (WCS3).
+  **Ejemplo:** `G56`
+
+G57: |
+  # **G57 – Sistema de coordenadas de trabajo 4**
+  Seleccionar el sistema de coordenadas de trabajo 4 (WCS4).
+  **Ejemplo:** `G57`
+
+G58: |
+  # **G58 – Sistema de coordenadas de trabajo 5**
+  Seleccionar el sistema de coordenadas de trabajo 5 (WCS5).
+  **Ejemplo:** `G58`
+
+G59: |
+  # **G59 – Sistema de coordenadas de trabajo 6**
+  Seleccionar el sistema de coordenadas de trabajo 6 (WCS6).
+  **Ejemplo:** `G59`
+
+G61: |
+  # **G61 – Modo de trayectoria exacta**
+  Activar el modo de trayectoria exacta (predeterminado en GRBL).
+  **Ejemplo:** `G61`
+
+G64: |
+  # **G64 – Modo de trayectoria continua**
+  Activar el modo de trayectoria continua (movimientos más suaves en las esquinas).
+  **Ejemplo:** `G64`
+
+G80: |
+  # **G80 – Cancelación del modo de movimiento**
+  Cancelar cualquier modo de movimiento activo (por ejemplo, ciclos predefinidos).
+  **Ejemplo:** `G80`
+
+G90: |
+  # **G90 – Posicionamiento absoluto**
+  Configurar el posicionamiento mediante coordenadas absolutas.
+  **Ejemplo:** `G90`
+
+G91: |
+  # **G91 – Posicionamiento relativo**
+  Configurar el posicionamiento mediante coordenadas relativas (incrementales).
+  **Ejemplo:** `G91`
+
+G92: |
+  # **G92 – Establecer la posición**
+  Asignar a la posición actual unas coordenadas especificadas.
+  **Ejemplo:** `G92 X0 Y0 Z0`
+
+G93: |
+  # **G93 – Modo de velocidad de avance en tiempo inverso**
+  Configurar la velocidad de avance en modo de tiempo inverso (poco utilizado en GRBL).
+  **Ejemplo:** `G93 F10`
+
+G94: |
+  # **G94 – Modo de velocidad de avance (unidades por minuto)**
+  Configurar la velocidad de avance en unidades por minuto (predeterminado en GRBL).
+  **Ejemplo:** `G94`
+
+M0: |
+  # **M0 – Pausa del programa**
+  Pausar el programa hasta que el usuario lo reanude.
+  **Ejemplo:** `M0`
+
+M2: |
+  # **M2 – Fin del programa**
+  Finalizar el programa y reiniciar la máquina.
+  **Ejemplo:** `M2`
+
+M3: |
+  # **M3 – Activación del husillo (sentido horario)**
+  Poner en marcha el husillo en sentido horario.
+  **Ejemplo:** `M3 S1000` (S = velocidad del husillo en RPM)
+
+M4: |
+  # **M4 – Activación del husillo (sentido antihorario)**
+  Poner en marcha el husillo en sentido antihorario.
+  **Ejemplo:** `M4 S1000`
+
+M5: |
+  # **M5 – Parada del husillo**
+  Detener el husillo.
+  **Ejemplo:** `M5`
+
+M6: |
+  # **M6 – Cambio de herramienta**
+  Cambiar la herramienta (si la máquina admite esta función).
+  **Ejemplo:** `M6 T1` (T1 = número de herramienta)
+
+M7: |
+  # **M7 – Activación de la refrigeración por nebulización**
+  Activar la refrigeración por pulverización fina.
+  **Ejemplo:** `M7`
+
+M8: |
+  # **M8 – Activación de la refrigeración por inundación**
+  Activar la refrigeración por inundación.
+  **Ejemplo:** `M8`
+
+M9: |
+  # **M9 – Desactivación de la refrigeración**
+  Desactivar todos los sistemas de refrigeración.
+  **Ejemplo:** `M9`
+
+M30: |
+  # **M30 – Fin del programa y reinicio**
+  Finalizar el programa y reiniciar la máquina (similar a M2, pero normalmente incluye un reinicio).
+  **Ejemplo:** `M30`
+
+M100: |
+  # **M100 – Macro personalizada (definida por el usuario)**
+  Ejecutar una macro personalizada (si está definida en GRBL).
+  **Ejemplo:** `M100`
+
+M114: |
+  # **M114 – Obtener la posición actual**
+  Mostrar la posición actual de la máquina.
+  **Ejemplo:** `M114`
+
+M119: |
+  # **M119 – Obtener el estado de los interruptores de límite**
+  Mostrar el estado de los interruptores de límite.
+  **Ejemplo:** `M119`
+
+"$": |
+  # **$ – Configuración de GRBL**
+  Consultar o modificar la configuración de GRBL.
+  **Ejemplo:**
+  - `$` – Mostrar todos los ajustes.
+  - `$0=10` – Establecer el ajuste 0 en 10.
+  - `$#` – Consultar los parámetros de GRBL (por ejemplo, los desplazamientos de los sistemas de coordenadas de trabajo).
+
+"$$": |
+  # **$$ – Consultar la configuración de GRBL**
+  Mostrar todos los ajustes actuales de GRBL.
+  **Ejemplo:** `$$`
+
+"$G": |
+  # **$G – Consultar el estado del analizador de G-code**
+  Mostrar el estado actual del analizador de G-code (por ejemplo, los grupos modales activos).
+  **Ejemplo:** `$G`
+
+"$I": |
+  # **$I – Consultar la información de compilación de GRBL**
+  Mostrar la versión de GRBL y la información de compilación.
+  **Ejemplo:** `$I`
+
+"$N": |
+  # **$N – Consultar los bloques de inicio**
+  Mostrar los bloques de inicio (comandos G-code ejecutados al encender la máquina).
+  **Ejemplo:** `$N`
+
+"$C": |
+  # **$C – Verificar el G-code**
+  Comprobar si hay errores en el G-code del búfer sin ejecutarlo.
+  **Ejemplo:** `$C`
+
+"$X": |
+  # **$X – Reiniciar GRBL**
+  Reiniciar GRBL (similar a apagar y volver a encender la alimentación).
+  **Ejemplo:** `$X`
+
+"$H": |
+  # **$H – Ciclo de búsqueda de origen**
+  Realizar un ciclo de búsqueda de origen para encontrar la posición de referencia de la máquina.
+  **Ejemplo:** `$H`
+
+"$J": |
+  # **$J – Movimiento manual (Jogging)**
+  Desplazar la máquina manualmente en una dirección especificada.
+  **Ejemplo:** `$J=G91 X10 F100` (Desplazar 10 mm en el eje X a 100 mm/min)
+
+"$RST": |
+  # **$RST – Restablecer GRBL**
+  Restablecer GRBL a su estado predeterminado.
+  **Ejemplo:** `$RST`
+
+"$SLP": |
+  # **$SLP – Modo de suspensión**
+  Poner GRBL en modo de suspensión (si es compatible).
+  **Ejemplo:** `$SLP`
+
+"~": |
+  # **~ – Reanudar después de una pausa**
+  Reanudar un programa pausado (por ejemplo, después de una retención de avance).
+  **Ejemplo:** `~`
+
+"!": |
+  # **! – Pausa de avance**
+  Pausar la operación actual (retención de avance).
+  **Ejemplo:** `!`
+
+"?": |
+  # **? – Estado actual**
+  Solicitar el estado actual de GRBL (por ejemplo, "Idle", "Run", "Hold").
+  **Ejemplo:** `?`

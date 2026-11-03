@@ -1,4 +1,4 @@
-use crate::{grbl::{
+use crate::{display::stylesheet::HelperStyle, grbl::{
     configuration::Configuration, helper::Helper, program::Program, status::{
         Mode, State::Alarm, Status,
     },
@@ -26,6 +26,7 @@ use std::{
 };
 use crate::logging::Level as LogLevel;
 use super::keys::{EventManager, KeyEvent};
+use tui_markdown;
 
 pub struct Frontend {
     program_running: bool,
@@ -181,7 +182,7 @@ impl Frontend {
             let helper_line = self
                 .command_helper
                 .get((&self.event_manager).into())
-                .map(|help| tui_markdown::from_str(help))
+                .map(|help| tui_markdown::from_str_with_options(help, &tui_markdown::Options::new(HelperStyle)))
                 .unwrap_or_default();
             f.render_widget(
                 Paragraph::new(helper_line).block(Block::default().borders(Borders::ALL)),

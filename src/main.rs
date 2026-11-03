@@ -11,6 +11,7 @@ use clap::Parser;
 use display::layout::{Frontend, ThreadedFrontend};
 use grbl::program::Program;
 use logging::ErrorLogger;
+use sys_locale::get_locale;
 
 use crate::grbl::helper::{Helper, Lang};
 
@@ -29,7 +30,7 @@ struct Cli {
     #[arg(trailing_var_arg = true)]
     extras: Vec<String>,
 
-    #[arg(long, default_value_t = "fr".to_string())]
+    #[arg(long, default_value_t = "".to_string())]
     lang: String,
 }
 
@@ -37,7 +38,12 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     let logger = cli.log_file.as_deref().map(ErrorLogger::new).transpose()?;
 
-    let lang: Lang = Lang::from(cli.lang);
+    let lang: Lang = if cli.lang != "" {
+        Lang::from(cli.lang)
+    } else {
+        let locale = get_locale().unwrap_or_else(|| String::from("en-US"));
+        Lang::from(locale.split(['-', '_']).next().unwrap_or("en").to_string())
+    };
     let command_helper = Helper::new(lang)?;
 
     println!("opening port {}", cli.port);

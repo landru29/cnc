@@ -2,18 +2,30 @@ use std::collections::HashMap;
 use serde_yaml;
 use anyhow::Result;
 
+const DE_YAML: &str = include_str!("de.yaml");
 const EN_YAML: &str = include_str!("en.yaml");
+const ES_YAML: &str = include_str!("es.yaml");
 const FR_YAML: &str = include_str!("fr.yaml");
+const PT_YAML: &str = include_str!("pt.yaml");
 
 pub enum Lang {
+    De,
     En,
+    Es,
     Fr,
+    Pt,
 }
 
 impl From<String> for Lang {
     fn from(value: String) -> Self {
         if value.to_ascii_lowercase() == "fr" {
             Self::Fr
+        } else if value.to_ascii_lowercase() == "es" {
+            Self::Es
+        } else if value.to_ascii_lowercase() == "de" {
+            Self::De
+        } else if value.to_ascii_lowercase() == "pt" {
+            Self::Pt
         } else {
             Self::En
         }
@@ -27,8 +39,11 @@ pub struct Helper {
 impl Helper {
     pub fn new(lang: Lang) -> Result<Self> {
         let data = match lang {
+            Lang::De => serde_yaml::from_str(DE_YAML)?,
             Lang::En => serde_yaml::from_str(EN_YAML)?,
+            Lang::Es => serde_yaml::from_str(ES_YAML)?,
             Lang::Fr => serde_yaml::from_str(FR_YAML)?,
+            Lang::Pt => serde_yaml::from_str(PT_YAML)?,
         };
 
         Ok(Self{ data })

@@ -1,0 +1,302 @@
+G0: |
+  # **G0 – Eilgangpositionierung**
+  Bewegung zu einer angegebenen Position mit der maximal möglichen Geschwindigkeit (Eilgang).
+  **Beispiel:** `G0 X10 Y20 Z5`
+
+G1: |
+  # **G1 – Lineare Interpolation**
+  Bewegung auf einer geraden Linie zu einer angegebenen Position mit einer kontrollierten Vorschubgeschwindigkeit.
+  **Beispiel:** `G1 X10 Y20 F100` (F = Vorschubgeschwindigkeit in mm/min oder Zoll/min)
+
+G2: |
+  # **G2 – Kreisinterpolation (im Uhrzeigersinn)**
+  Bewegung entlang eines Kreisbogen im Uhrzeigersinn zu einer angegebenen Position.
+  **Beispiel:** `G2 X10 Y20 I5 J0` (I, J = Versatz des Kreismittelpunkts relativ zum Startpunkt)
+
+G3: |
+  # **G3 – Kreisinterpolation (gegen den Uhrzeigersinn)**
+  Bewegung entlang eines Kreisbogens gegen den Uhrzeigersinn zu einer angegebenen Position.
+  **Beispiel:** `G3 X10 Y20 I5 J0`
+
+G4: |
+  # **G4 – Verweilzeit**
+  Die Maschine für eine festgelegte Zeitspanne anhalten (in Millisekunden oder Sekunden).
+  **Beispiel:** `G4 P1000` (Pause für 1000 Millisekunden)
+
+G10: |
+  # **G10 – Werkstückkoordinatenversatz festlegen**
+  Einen Versatz für ein Werkstückkoordinatensystem festlegen.
+  **Beispiel:** `G10 L2 P1 X10 Y20` (L2 = Arbeitskoordinatensystem, P1 = Index des Koordinatensystems)
+
+G17: |
+  # **G17 – XY-Ebene auswählen**
+  Die XY-Ebene für die Kreisinterpolation (G2/G3) auswählen.
+  **Beispiel:** `G17`
+
+G18: |
+  # **G18 – XZ-Ebene auswählen**
+  Die XZ-Ebene für die Kreisinterpolation (G2/G3) auswählen.
+  **Beispiel:** `G18`
+
+G19: |
+  # **G19 – YZ-Ebene auswählen**
+  Die YZ-Ebene für die Kreisinterpolation (G2/G3) auswählen.
+  **Beispiel:** `G19`
+
+G20: |
+  # **G20 – Maßeinheit Zoll**
+  Das Einheitensystem auf Zoll einstellen.
+  **Beispiel:** `G20`
+
+G21: |
+  # **G21 – Maßeinheit Millimeter**
+  Das Einheitensystem auf Millimeter einstellen.
+  **Beispiel:** `G21`
+
+G28: |
+  # **G28 – Rückkehr zum Maschinenreferenzpunkt**
+  Die Maschine zu ihrer Referenzposition fahren (festgelegt durch die Referenzschalter).
+  **Beispiel:** `G28`
+
+G30: |
+  # **G30 – Rückkehr zum zweiten Referenzpunkt**
+  Die Maschine zu einer zweiten Referenzposition fahren (falls konfiguriert).
+  **Beispiel:** `G30`
+
+G38.2: |
+  # **G38.2 – Antasten in Richtung Werkstück**
+  Das Werkstück antasten, bis ein Kontakt erkannt wird.
+  **Beispiel:** `G38.2 Z-10 F10`
+
+G38.3: |
+  # **G38.3 – Antasten weg vom Werkstück**
+  Vom Werkstück wegfahren, bis der Kontakt verloren geht.
+  **Beispiel:** `G38.3 Z10 F10`
+
+G40: |
+  # **G40 – Werkzeugradiuskorrektur deaktivieren**
+  Die Werkzeugradiuskorrektur deaktivieren.
+  **Beispiel:** `G40`
+
+G43: |
+  # **G43 – Positive Werkzeuglängenkorrektur**
+  Eine positive Werkzeuglängenkorrektur anwenden.
+  **Beispiel:** `G43 H1` (H1 = Index der Werkzeugkorrektur)
+
+G49: |
+  # **G49 – Werkzeuglängenkorrektur aufheben**
+  Die Werkzeuglängenkorrektur aufheben.
+  **Beispiel:** `G49`
+
+G53: |
+  # **G53 – Bewegung in absoluten Maschinenkoordinaten**
+  Bewegung in absoluten Maschinenkoordinaten (Werkstückkoordinatenversätze werden ignoriert).
+  **Beispiel:** `G53 G0 X10 Y20`
+
+G54: |
+  # **G54 – Werkstückkoordinatensystem 1**
+  Das Werkstückkoordinatensystem 1 (WCS1) auswählen.
+  **Beispiel:** `G54`
+
+G55: |
+  # **G55 – Werkstückkoordinatensystem 2**
+  Das Werkstückkoordinatensystem 2 (WCS2) auswählen.
+  **Beispiel:** `G55`
+
+G56: |
+  # **G56 – Werkstückkoordinatensystem 3**
+  Das Werkstückkoordinatensystem 3 (WCS3) auswählen.
+  **Beispiel:** `G56`
+
+G57: |
+  # **G57 – Werkstückkoordinatensystem 4**
+  Das Werkstückkoordinatensystem 4 (WCS4) auswählen.
+  **Beispiel:** `G57`
+
+G58: |
+  # **G58 – Werkstückkoordinatensystem 5**
+  Das Werkstückkoordinatensystem 5 (WCS5) auswählen.
+  **Beispiel:** `G58`
+
+G59: |
+  # **G59 – Werkstückkoordinatensystem 6**
+  Das Werkstückkoordinatensystem 6 (WCS6) auswählen.
+  **Beispiel:** `G59`
+
+G61: |
+  # **G61 – Exakter Bahnmodus**
+  Den Modus für exakte Bahnführung aktivieren (Standard in GRBL).
+  **Beispiel:** `G61`
+
+G64: |
+  # **G64 – Kontinuierlicher Bahnmodus**
+  Den Modus für kontinuierliche Bahnführung aktivieren (gleichmäßigere Bewegungen an Ecken).
+  **Beispiel:** `G64`
+
+G80: |
+  # **G80 – Bewegungsmodus abbrechen**
+  Jeden aktiven Bewegungsmodus abbrechen (z. B. Festzyklen).
+  **Beispiel:** `G80`
+
+G90: |
+  # **G90 – Absolute Positionierung**
+  Die Positionierung auf absolute Koordinaten einstellen.
+  **Beispiel:** `G90`
+
+G91: |
+  # **G91 – Relative Positionierung**
+  Die Positionierung auf relative Koordinaten (inkrementell) einstellen.
+  **Beispiel:** `G91`
+
+G92: |
+  # **G92 – Position festlegen**
+  Der aktuellen Position bestimmte Koordinaten zuweisen.
+  **Beispiel:** `G92 X0 Y0 Z0`
+
+G93: |
+  # **G93 – Vorschubmodus mit inverser Zeit**
+  Die Vorschubgeschwindigkeit im Modus mit inverser Zeit einstellen (in GRBL selten verwendet).
+  **Beispiel:** `G93 F10`
+
+G94: |
+  # **G94 – Vorschubmodus (Einheiten pro Minute)**
+  Den Vorschubmodus auf Einheiten pro Minute einstellen (Standard in GRBL).
+  **Beispiel:** `G94`
+
+M0: |
+  # **M0 – Programm pausieren**
+  Das Programm anhalten, bis der Benutzer es fortsetzt.
+  **Beispiel:** `M0`
+
+M2: |
+  # **M2 – Programmende**
+  Das Programm beenden und die Maschine zurücksetzen.
+  **Beispiel:** `M2`
+
+M3: |
+  # **M3 – Spindel einschalten (im Uhrzeigersinn)**
+  Die Spindel im Uhrzeigersinn starten.
+  **Beispiel:** `M3 S1000` (S = Spindeldrehzahl in U/min)
+
+M4: |
+  # **M4 – Spindel einschalten (gegen den Uhrzeigersinn)**
+  Die Spindel gegen den Uhrzeigersinn starten.
+  **Beispiel:** `M4 S1000`
+
+M5: |
+  # **M5 – Spindel stoppen**
+  Die Spindel anhalten.
+  **Beispiel:** `M5`
+
+M6: |
+  # **M6 – Werkzeugwechsel**
+  Das Werkzeug wechseln (sofern von der Maschine unterstützt).
+  **Beispiel:** `M6 T1` (T1 = Werkzeugnummer)
+
+M7: |
+  # **M7 – Minimalmengenschmierung einschalten**
+  Die Kühlung durch Sprühnebel einschalten.
+  **Beispiel:** `M7`
+
+M8: |
+  # **M8 – Flutkühlung einschalten**
+  Die Flutkühlung einschalten.
+  **Beispiel:** `M8`
+
+M9: |
+  # **M9 – Kühlung ausschalten**
+  Alle Kühlsysteme ausschalten.
+  **Beispiel:** `M9`
+
+M30: |
+  # **M30 – Programmende und Zurücksetzen**
+  Das Programm beenden und die Maschine zurücksetzen (ähnlich wie M2, beinhaltet jedoch häufig einen Reset).
+  **Beispiel:** `M30`
+
+M100: |
+  # **M100 – Benutzerdefiniertes Makro**
+  Ein benutzerdefiniertes Makro ausführen (sofern in GRBL definiert).
+  **Beispiel:** `M100`
+
+M114: |
+  # **M114 – Aktuelle Position abrufen**
+  Die aktuelle Maschinenposition anzeigen.
+  **Beispiel:** `M114`
+
+M119: |
+  # **M119 – Zustand der Endschalter abrufen**
+  Den Zustand der Endschalter anzeigen.
+  **Beispiel:** `M119`
+
+"$": |
+  # **$ – GRBL-Einstellungen**
+  Die GRBL-Einstellungen anzeigen oder ändern.
+  **Beispiel:**
+  - `$` – Alle Einstellungen auflisten.
+  - `$0=10` – Einstellung 0 auf 10 setzen.
+  - `$#` – GRBL-Parameter anzeigen (z. B. Werkstückkoordinatenversätze).
+
+"$$": |
+  # **$$ – GRBL-Einstellungen anzeigen**
+  Alle aktuellen GRBL-Einstellungen anzeigen.
+  **Beispiel:** `$$`
+
+"$G": |
+  # **$G – Zustand des G-Code-Parsers anzeigen**
+  Den aktuellen Zustand des G-Code-Parsers anzeigen (z. B. aktive modale Gruppen).
+  **Beispiel:** `$G`
+
+"$I": |
+  # **$I – GRBL-Build-Informationen anzeigen**
+  Die GRBL-Version und Build-Informationen anzeigen.
+  **Beispiel:** `$I`
+
+"$N": |
+  # **$N – Startblöcke anzeigen**
+  Die Startblöcke anzeigen (G-Code-Befehle, die beim Einschalten ausgeführt werden).
+  **Beispiel:** `$N`
+
+"$C": |
+  # **$C – G-Code überprüfen**
+  Den G-Code im Puffer auf Fehler überprüfen, ohne ihn auszuführen.
+  **Beispiel:** `$C`
+
+"$X": |
+  # **$X – GRBL zurücksetzen**
+  GRBL zurücksetzen (ähnlich wie beim Aus- und Wiedereinschalten der Stromversorgung).
+  **Beispiel:** `$X`
+
+"$H": |
+  # **$H – Referenzfahrt**
+  Eine Referenzfahrt durchführen, um die Referenzposition der Maschine zu ermitteln.
+  **Beispiel:** `$H`
+
+"$J": |
+  # **$J – Manuelles Verfahren (Jogging)**
+  Die Maschine manuell in eine angegebene Richtung bewegen.
+  **Beispiel:** `$J=G91 X10 F100` (10 mm in X-Richtung mit 100 mm/min verfahren)
+
+"$RST": |
+  # **$RST – GRBL zurücksetzen**
+  GRBL auf den Standardzustand zurücksetzen.
+  **Beispiel:** `$RST`
+
+"$SLP": |
+  # **$SLP – Schlafmodus**
+  GRBL in den Schlafmodus versetzen (sofern unterstützt).
+  **Beispiel:** `$SLP`
+
+"~": |
+  # **~ – Nach einer Pause fortsetzen**
+  Ein pausiertes Programm fortsetzen (z. B. nach einem Vorschubhalt).
+  **Beispiel:** `~`
+
+"!": |
+  # **! – Vorschubhalt**
+  Den aktuellen Vorgang pausieren (Vorschubhalt).
+  **Beispiel:** `!`
+
+"?": |
+  # **? – Aktuellen Status abfragen**
+  Den aktuellen GRBL-Status abfragen (z. B. "Idle", "Run", "Hold").
+  **Beispiel:** `?`
