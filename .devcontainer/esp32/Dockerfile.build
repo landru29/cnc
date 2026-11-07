@@ -23,7 +23,7 @@ RUN sed -i -E "s#^(\s*platform\s*=\s*).*platform-espressif32.*\$#\1${PLATFORM_SP
 RUN set -e; \
     mkdir /out; \
     B=.pio/build/${PIO_ENV}; \
-    cp $B/bootloader.bin $B/partitions.bin $B/firmware.bin /out/; \
+    cp $B/bootloader.bin $B/partitions.bin $B/firmware.bin $B/firmware.elf /out/; \
     cp /root/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin /out/; \
     ls -l /out
 

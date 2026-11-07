@@ -75,8 +75,19 @@ created. Log entries include an RFC 3339 UTC timestamp.
 ## Developpement
 
 1. Launch the devcontainer.
-2. Inside the devcontainer, launch `/connect.sh`. It creates a node `/tmp/ttyESP` which is an UART.
-3. Launch the application `cargo run --release --bin cnc -- -p /tmp/ttyESP`
+2. The ESP32 emulator creates the serial device `/tmp/ttyESP32` automatically.
+3. Launch the application: `cargo run --release --bin cnc -- -p /tmp/ttyESP32`
+
+To access a physical USB serial device such as `/dev/ttyUSB0`, the container adds
+the host device's group to the `vscode` user's supplementary groups. The default
+GID is `20` (the usual Linux `dialout` group). If your device uses another GID,
+set `TTYUSB_GID` in the environment used to launch VS Code to the value from:
+
+```bash
+stat -c '%g' /dev/ttyUSB0
+```
+
+Rebuild or reopen the devcontainer after changing `TTYUSB_GID`.
 
 
 ## Testing

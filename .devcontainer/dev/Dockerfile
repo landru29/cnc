@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     picocom \
     pkg-config \
     libudev-dev \
+    supervisor \
     git
 
 RUN groupadd --gid 1000 vscode \
@@ -21,8 +22,7 @@ RUN printf 'vscode ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/vscode \
     && chmod 0440 /etc/sudoers.d/vscode \
     && visudo -cf /etc/sudoers.d/vscode
 
-COPY connect.sh /connect.sh
-RUN chmod a+rx /connect.sh
+COPY supervisord.conf /etc/supervisor/conf.d/esp-emulator.conf
 
 USER vscode
 ENV PATH="/go/bin:${PATH}"

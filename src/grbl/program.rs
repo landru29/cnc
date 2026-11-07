@@ -5,11 +5,30 @@ use ratatui::{
     text::{Line, Span, Text},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Direction {
+    Forward,
+    Backward,
+}
+
+use super::status::BufferStatus;
+
+impl From<Direction> for i16 {
+    fn from(direction: Direction) -> Self {
+        match direction {
+            Direction::Backward => -1,
+            Direction::Forward => 1,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Program {
-    pub code: Vec<String>,
-    pub cursor: usize,
-    pub end_of_program_reached: bool,
+    code: Vec<String>,
+    cursor: usize, // last line in machine buffer
+    pub eop_reached_in_machine_buffer: bool, // End Of Program
+    machine_buffer_size: Option<usize>,
+    machine_buffer: Vec<usize>,
 }
 
 impl Program {
@@ -17,8 +36,17 @@ impl Program {
         Self{
             code: data,
             cursor: 0,
-            end_of_program_reached: false,
+            eop_reached_in_machine_buffer: false,
+            machine_buffer_size: None,
+            machine_buffer: vec![],
         }
+    }
+
+    pub fn set_initial_machine_buffer_size(&mut self, size: usize) {
+        match self.machine_buffer_size {
+            None => self.machine_buffer_size = Some(size),
+            Some(_) => {}
+        };
     }
 
     pub fn open(filename: String) -> Result<Self> {
@@ -29,34 +57,79 @@ impl Program {
         Ok(Self::new(gcode))
     }
 
-    pub fn process(&mut self, command_offset: usize) -> Result<Vec<String>> {
-        let mut current_cursor = self.cursor;
-        let mut output: Vec<String> = vec![];
+    fn cut_buffer(&mut self, buffer: &BufferStatus) {
+        if self.machine_buffer_size.is_none() {
+            self.machine_buffer_size = Some(buffer.lines);
 
-        for _ in 0..command_offset {
-            current_cursor +=1;
-            
-            if current_cursor>= self.code.len() {
+            return
+        }
+
+        let max_buffer_size = self.machine_buffer_size.unwrap();
+        if buffer.lines> max_buffer_size {
+            self.machine_buffer_size = Some(buffer.lines);
+
+            return;
+        }
+
+        let start_index = self.machine_buffer.len().saturating_sub(max_buffer_size - buffer.lines);
+        self.machine_buffer = self.machine_buffer[start_index..].to_vec();
+    }
+
+    fn lines(&self, current: usize, count: usize, direction: Direction) -> Result<Vec<usize>> {
+        let mut output: Vec<usize> = vec![];
+        if current > self.code.len() {
+            return Err(anyhow::anyhow!("end of program reached"));
+        }
+
+        let step: i64 = i16::from(direction) as i64;
+        let mut current_cursor = current as i64;
+
+        for _ in 0..count {
+            current_cursor += step;
+            if current_cursor < 0 || current_cursor >= self.code.len() as i64 {
                 break;
             }
 
-            while current_cursor<self.code.len() && !Self::is_code_line(&self.code[current_cursor]) {
-                current_cursor += 1;
+            while current_cursor >= 0
+                && current_cursor < self.code.len() as i64
+                && !Self::is_code_line(&self.code[current_cursor as usize])
+            {
+                current_cursor += step;
             }
 
-            if current_cursor< self.code.len() && Self::is_code_line(&self.code[current_cursor]) {
-                output.push(self.code[current_cursor].clone());
+            if current_cursor >= 0
+                && current_cursor < self.code.len() as i64
+                && Self::is_code_line(&self.code[current_cursor as usize])
+            {
+                output.push(current_cursor as usize);
             }
         }
 
-        if current_cursor < self.code.len()  && Self::is_code_line(&self.code[current_cursor]) {
-            self.cursor = current_cursor;
+        Ok(output)
+    }
 
-            Ok(output)
-        } else {
-            self.end_of_program_reached = true;
-            anyhow::bail!("end of program")
+    pub fn process(&mut self, buffer: &BufferStatus) -> Result<Vec<String>> {
+        self.cut_buffer(&buffer);
+        
+        let cursor = self.cursor;
+        let line_map =  self
+            .lines(cursor, buffer.lines, Direction::Forward)
+            .map_err(|err| {
+                self.eop_reached_in_machine_buffer = true;
+                err
+            })?;
+        let result = line_map
+            .iter()
+            .map(|index| self.code[*index].clone())
+            .collect::<Vec<String>>();
+
+        if let Some(last) = line_map.last() {
+            self.cursor = *last;
         }
+
+        self.machine_buffer.extend(line_map);
+
+        Ok(result)
     }
 
     pub fn is_code_line(line: &str) -> bool {
@@ -65,30 +138,51 @@ impl Program {
             && !line.trim().is_empty()
     }
 
-    pub fn viewport(self, height: usize, ) -> ProgramViewPort {
+    pub fn viewport(&self, height: usize, buffer: &BufferStatus) -> ProgramViewPort {
         let half_size = height / 2 + (height % 2);
         let len = self.code.len();
+        
 
-        if self.cursor >= len {
+        let mut program_cursor = *(self.machine_buffer.first().unwrap_or(&self.cursor));
+
+        if let Some(buffer_size) = self.machine_buffer_size {
+            let offset = buffer_size - buffer.lines;
+            if offset>0 {
+                program_cursor += offset;
+            }
+        }
+
+        if program_cursor >= len {
             let start = len.saturating_sub(height);
             return ProgramViewPort{
                 program_lines: self.code[start..].to_vec(),
                 cursor: height,
-                end_of_program_reached: self.end_of_program_reached,
+                end_of_program_reached: self.eop_reached_in_machine_buffer,
+                buffer: None,
             };
         }
 
-        let start = if self.cursor > half_size {
-            (self.cursor - half_size).min(len.saturating_sub(height))
+        let start = if program_cursor > half_size {
+            (program_cursor - half_size).min(len.saturating_sub(height))
         } else {
             0
         };
         let end = (start + height).min(len);
+        
+        let buffer = if self.machine_buffer.len()>0 {
+            Some((
+                *(self.machine_buffer.first().unwrap_or(&start)),
+                *(self.machine_buffer.last().unwrap_or(&start))
+            ))
+        } else {
+            None
+        };
 
         ProgramViewPort {
             program_lines: self.code[start..end].to_vec(),
-            cursor: self.cursor - start,
-            end_of_program_reached: self.end_of_program_reached,
+            cursor: program_cursor - start,
+            end_of_program_reached: self.eop_reached_in_machine_buffer,
+            buffer,
         }
     }
 }
@@ -97,6 +191,9 @@ impl Program {
 pub struct ProgramViewPort{
     pub program_lines: Vec<String>, 
     pub cursor: usize,
+    pub buffer: Option<(usize,usize)>,
+    // pub buffer_start: usize,
+    // pub buffer_end: usize,
     pub end_of_program_reached: bool,
 }
 
@@ -107,20 +204,29 @@ impl<'a> Into<Text<'a>> for ProgramViewPort {
             .enumerate()
             .map(|(i, l)| {
                 let mut rendered_line = l.clone();
+
                 if i == self.cursor && self.end_of_program_reached{
-                    rendered_line = format!("█ {}", rendered_line);
+                    rendered_line = format!("█  {}", rendered_line);
                 } else if i == self.cursor {
-                    rendered_line = format!("> {}", rendered_line);
+                    rendered_line = format!(">  {}", rendered_line);
                 } else {
-                    rendered_line = format!("  {}", rendered_line);
+                    rendered_line = format!("   {}", rendered_line);
                 }
-                let style = if i == self.cursor {
+
+                let mut style = if i == self.cursor {
                     Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
                 } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
                     Style::default().fg(Color::Green)
                 } else {
                     Style::default().fg(Color::White)
                 };
+
+                if let Some(buffer) = self.buffer {
+                    if i >= buffer.0 && i <= buffer.1 {
+                        style = style.add_modifier(ratatui::style::Modifier::ITALIC)
+                    }
+                }
+
                 Line::from(Span::styled(rendered_line, style))
             })
             .collect();
@@ -139,11 +245,15 @@ mod tests {
         p
     }
 
+    fn default_buffer() -> BufferStatus {
+        BufferStatus::default()
+    }
+
     const CODE: [&str; 10] = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
 
     #[test]
     fn window_empty_program() {
-        let viewport = program_at(&[], 0).viewport(5);
+        let viewport = program_at(&[], 0).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert!(window.is_empty());
         assert_eq!(effective, 5);
@@ -151,7 +261,7 @@ mod tests {
 
     #[test]
     fn window_cursor_at_start() {
-        let viewport = program_at(&CODE, 0).viewport(5);
+        let viewport = program_at(&CODE, 0).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
         assert_eq!(effective, 0);
@@ -159,7 +269,7 @@ mod tests {
 
     #[test]
     fn window_cursor_near_start() {
-        let viewport = program_at(&CODE, 2).viewport(5);
+        let viewport = program_at(&CODE, 2).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
         assert_eq!(effective, 2);
@@ -167,7 +277,7 @@ mod tests {
 
     #[test]
     fn window_centers_cursor() {
-        let viewport = program_at(&CODE, 5).viewport(5);
+        let viewport = program_at(&CODE, 5).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["c", "d", "e", "f", "g"]);
         assert_eq!(effective, 3);
@@ -175,7 +285,7 @@ mod tests {
 
     #[test]
     fn window_cursor_near_end() {
-        let viewport = program_at(&CODE, 8).viewport(5);
+        let viewport = program_at(&CODE, 8).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 3);
@@ -183,7 +293,7 @@ mod tests {
 
     #[test]
     fn window_cursor_at_last_line() {
-        let viewport = program_at(&CODE, 9).viewport(5);
+        let viewport = program_at(&CODE, 9).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 4);
@@ -191,7 +301,7 @@ mod tests {
 
     #[test]
     fn window_cursor_past_end() {
-        let viewport = program_at(&CODE, 10).viewport(5);
+        let viewport = program_at(&CODE, 10).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
         assert_eq!(effective, 5);
@@ -199,7 +309,7 @@ mod tests {
 
     #[test]
     fn window_code_shorter_than_height() {
-        let viewport = program_at(&["a", "b", "c"], 1).viewport(5);
+        let viewport = program_at(&["a", "b", "c"], 1).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c"]);
         assert_eq!(effective, 1);
@@ -207,7 +317,7 @@ mod tests {
 
     #[test]
     fn window_cursor_past_end_short_code() {
-        let viewport = program_at(&["a", "b", "c"], 3).viewport(5);
+        let viewport = program_at(&["a", "b", "c"], 3).viewport(5, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["a", "b", "c"]);
         assert_eq!(effective, 5);
@@ -215,7 +325,7 @@ mod tests {
 
     #[test]
     fn window_even_height() {
-        let viewport = program_at(&CODE, 5).viewport(4);
+        let viewport = program_at(&CODE, 5).viewport(4, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["d", "e", "f", "g"]);
         assert_eq!(effective, 2);
@@ -223,7 +333,7 @@ mod tests {
 
     #[test]
     fn window_even_height_cursor_at_last_line() {
-        let viewport = program_at(&CODE, 9).viewport(4);
+        let viewport = program_at(&CODE, 9).viewport(4, &default_buffer());
         let (window, effective) = (viewport.program_lines, viewport.cursor);
         assert_eq!(window, vec!["g", "h", "i", "j"]);
         assert_eq!(effective, 3);

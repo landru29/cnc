@@ -4,7 +4,7 @@
   "service": "dev",
   "workspaceFolder": "/workspace",
   "shutdownAction": "stopCompose",
-  "postStartCommand": "nohup socat pty,link=/tmp/ttyESP32,raw,echo=0 tcp:esp32:5555,forever,interval=1 >/tmp/socat.log 2>&1 &",
+  "postStartCommand": "sudo supervisord -c /etc/supervisor/supervisord.conf || true",
   "customizations": {
 		// Configure properties specific to VS Code.
 		"vscode": {

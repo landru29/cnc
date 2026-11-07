@@ -4,8 +4,17 @@ services:
       context: ./dev
       dockerfile: Dockerfile
     command: sleep infinity
+    privileged: true
+    device_cgroup_rules: 
+      - "c 188:* rmw"
+      - "c 189:* rmw"
+    group_add:
+      - "${TTYUSB_GID:-20}"
     volumes:
+      - /dev:/dev
       - ..:/workspace:cached
+    environment:
+      CNC_SERIAL_PORT: /tmp/ttyESP32
     depends_on: [esp32]
 
   esp32:

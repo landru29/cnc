@@ -59,7 +59,7 @@ impl EventManager {
                     Ok(Some(KeyEvent::Command(command)))
                 },
                 (KeyCode::F(4), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramStop)),
-                (KeyCode::F(5), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramStop)),
+                (KeyCode::F(5), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramRun)),
                 (KeyCode::F(6), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramPause)),
                 (KeyCode::F(7), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramModeToggle)),
                 (KeyCode::F(8), KeyModifiers::NONE) => Ok(Some(KeyEvent::ProgramStepOver)),

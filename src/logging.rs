@@ -22,7 +22,7 @@ pub enum Level {
 impl fmt::Display for Level {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Error => write!(f, "ERR"),
+            Self::Error => write!(f, "ERROR"),
             Self::Info => write!(f, "INFO"),
         }
     }

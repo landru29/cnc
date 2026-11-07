@@ -74,8 +74,14 @@ impl FromStr for Status {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BufferStatus {
-    pub lines: u32,
-    pub bytes: u32,
+    pub lines: usize,
+    pub bytes: usize,
+}
+
+impl Default for BufferStatus {
+    fn default() -> Self {
+        Self { lines: 0, bytes: 0 }
+    }
 }
 
 impl fmt::Display for BufferStatus {
@@ -261,11 +267,11 @@ impl FromStr for RealTime {
                 }
                 let lines = values[0]
                     .trim()
-                    .parse::<u32>()
+                    .parse::<usize>()
                     .map_err(|_| StatusError::Malformed(part.to_string()))?;
                 let bytes = values[1]
                     .trim()
-                    .parse::<u32>()
+                    .parse::<usize>()
                     .map_err(|_| StatusError::Malformed(part.to_string()))?;
                 rt.buffer = Some(BufferStatus { lines, bytes });
             } else if let Some(value) = part.strip_prefix("Pn:") {

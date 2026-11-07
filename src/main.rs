@@ -1,14 +1,14 @@
 mod application;
-mod display;
 mod grbl;
 mod logging;
 mod serial;
 mod history;
+mod frontend;
 
 use anyhow::Result;
 use application::routing::Channels;
 use clap::Parser;
-use display::layout::{Frontend, ThreadedFrontend};
+use application::application::{Application, ThreadedApp};
 use grbl::program::Program;
 use logging::ErrorLogger;
 use sys_locale::get_locale;
@@ -18,10 +18,10 @@ use crate::grbl::helper::{Helper, Lang};
 #[derive(Parser)]
 #[command(name = "workspace")]
 struct Cli {
-    #[arg(short = 'p', long, default_value_t = "/dev/ttyUSB0".to_string())]
+    #[arg(short = 'p', long, default_value_t = "/dev/ttyUSB0".to_string(), env="CNC_SERIAL_PORT")]
     port: String,
 
-    #[arg(short = 'b', long, default_value_t = 115200)]
+    #[arg(short = 'b', long, default_value_t = 115200, env="CNC_BAUDRATE")]
     baudrate: u32,
 
     #[arg(short = 'l', long)]
@@ -30,7 +30,7 @@ struct Cli {
     #[arg(trailing_var_arg = true)]
     extras: Vec<String>,
 
-    #[arg(long, default_value_t = "".to_string())]
+    #[arg(long, default_value_t = "".to_string(), env="CNC_LANG")]
     lang: String,
 }
 
@@ -74,8 +74,8 @@ fn main() -> Result<()> {
     });
 
     // Create UI
-    let mut ui = ThreadedFrontend::new();
-    let mut frontend = Frontend::new(program, cli.port, logger, command_helper);
+    let mut ui = ThreadedApp::new();
+    let mut frontend = Application::new(program, cli.port, logger, command_helper);
     let frontend_command_rx = frontend.take_command_receiver()?;
     let frontend_tx = frontend.tx.clone();
     ui.start(frontend)?;
