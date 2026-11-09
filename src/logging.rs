@@ -10,7 +10,7 @@ use std::{
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Clone)]
-pub struct ErrorLogger {
+pub struct Logger {
     file: Arc<Mutex<File>>,
 }
 
@@ -28,7 +28,7 @@ impl fmt::Display for Level {
     }
 }
 
-impl ErrorLogger {
+impl Logger {
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
         let file = OpenOptions::new()
             .create(true)
@@ -56,7 +56,7 @@ impl ErrorLogger {
 
 #[cfg(test)]
 mod tests {
-    use super::ErrorLogger;
+    use super::Logger;
     use super::Level;
     use std::{fs, time::SystemTime};
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -70,7 +70,7 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("cnc-errors-{}-{timestamp}.log", std::process::id()));
 
-        let logger = ErrorLogger::new(&path).unwrap();
+        let logger = Logger::new(&path).unwrap();
         logger.log(Level::Error,"first error").unwrap();
         logger.clone().log(Level::Error,"second error").unwrap();
         drop(logger);

@@ -5,40 +5,41 @@ use ratatui::{
     text::{Line, Span, Text},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    Forward,
-    Backward,
-}
-
 use super::status::BufferStatus;
 
-impl From<Direction> for i16 {
-    fn from(direction: Direction) -> Self {
-        match direction {
-            Direction::Backward => -1,
-            Direction::Forward => 1,
-        }
-    }
-}
+use crate::logging::Logger;
+use crate::logging::Level as LogLevel;
 
 #[derive(Clone)]
 pub struct Program {
     code: Vec<String>,
-    cursor: usize, // last line in machine buffer
+    logger: Option<Logger>,
+    pub cursor: usize, // last line in machine buffer
     pub eop_reached_in_machine_buffer: bool, // End Of Program
     machine_buffer_size: Option<usize>,
     machine_buffer: Vec<usize>,
+    pub running: bool,
 }
 
 impl Program {
-    pub fn new(data: Vec<String>) -> Self {
+    pub fn new(data: Vec<String>, logger: Option<Logger>) -> Self {
         Self{
             code: data,
+            logger,
             cursor: 0,
             eop_reached_in_machine_buffer: false,
             machine_buffer_size: None,
             machine_buffer: vec![],
+            running: false,
+        }
+    }
+
+    fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
+        if let Some(logger) = &self.logger {
+            let message = format!("[PROGRAM] {}", msg);
+            if let Err(log_error) = logger.log(level, &message) {
+                eprintln!("Failed to write frontend error to log file: {log_error}");
+            }
         }
     }
 
@@ -49,12 +50,12 @@ impl Program {
         };
     }
 
-    pub fn open(filename: String) -> Result<Self> {
+    pub fn open(filename: String, logger: Option<Logger>) -> Result<Self> {
         let file_content = std::fs::read_to_string(filename)?;
 
         let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
-        Ok(Self::new(gcode))
+        Ok(Self::new(gcode, logger))
     }
 
     fn cut_buffer(&mut self, buffer: &BufferStatus) {
@@ -71,49 +72,76 @@ impl Program {
             return;
         }
 
-        let start_index = self.machine_buffer.len().saturating_sub(max_buffer_size - buffer.lines);
+        let new_buffer_size = if max_buffer_size > buffer.lines {
+            max_buffer_size - buffer.lines
+        } else {
+            0
+        };
+
+        let start_index = self.machine_buffer.len().saturating_sub(new_buffer_size);
+
+        self.log(LogLevel::Info, format!("[BUFFER] cutting: {:?}, device buffer lines: {}, new buffer size: {}, cutting index: {}", self.machine_buffer, buffer.lines, new_buffer_size, start_index));
+
         self.machine_buffer = self.machine_buffer[start_index..].to_vec();
     }
 
-    fn lines(&self, current: usize, count: usize, direction: Direction) -> Result<Vec<usize>> {
+    fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
+        self.log(LogLevel::Info, format!("collecting lines with current: {}, count: {}, max_bytes: {}", current, count, max_bytes));
         let mut output: Vec<usize> = vec![];
-        if current > self.code.len() {
+        if current >= self.code.len() {
             return Err(anyhow::anyhow!("end of program reached"));
         }
 
-        let step: i64 = i16::from(direction) as i64;
+        if count == 0 || max_bytes == 0 {
+            return Ok(output);
+        }
+
         let mut current_cursor = current as i64;
+        let mut remaining_bytes = max_bytes;
 
         for _ in 0..count {
-            current_cursor += step;
+            current_cursor += 1;
             if current_cursor < 0 || current_cursor >= self.code.len() as i64 {
+                if output.is_empty() {
+                    return Err(anyhow::anyhow!("end of program reached"));
+                }
+
                 break;
             }
 
-            while current_cursor >= 0
-                && current_cursor < self.code.len() as i64
+            while current_cursor < self.code.len() as i64
                 && !Self::is_code_line(&self.code[current_cursor as usize])
             {
-                current_cursor += step;
+                current_cursor += 1;
             }
 
-            if current_cursor >= 0
-                && current_cursor < self.code.len() as i64
+
+            if current_cursor < self.code.len() as i64
                 && Self::is_code_line(&self.code[current_cursor as usize])
             {
+                let line_length = self.code[current_cursor as usize].len();
+                if line_length > remaining_bytes {
+                    break;
+                }
+                
+                remaining_bytes -= line_length+1; // +1 for newline character
                 output.push(current_cursor as usize);
             }
         }
+
+        self.log(LogLevel::Info, format!("collected lines: {:?}", output));
 
         Ok(output)
     }
 
     pub fn process(&mut self, buffer: &BufferStatus) -> Result<Vec<String>> {
+        self.log(LogLevel::Info, format!("[BUFFER] init: {:?}", self.machine_buffer));
         self.cut_buffer(&buffer);
+        self.log(LogLevel::Info, format!("[BUFFER] cut: {:?} - {}", self.machine_buffer, buffer));
         
         let cursor = self.cursor;
         let line_map =  self
-            .lines(cursor, buffer.lines, Direction::Forward)
+            .lines(cursor, buffer.lines,buffer.bytes)
             .map_err(|err| {
                 self.eop_reached_in_machine_buffer = true;
                 err
@@ -128,6 +156,7 @@ impl Program {
         }
 
         self.machine_buffer.extend(line_map);
+        self.log(LogLevel::Info, format!("[BUFFER] extended: {:?}", self.machine_buffer));
 
         Ok(result)
     }
@@ -138,38 +167,25 @@ impl Program {
             && !line.trim().is_empty()
     }
 
-    pub fn viewport(&self, height: usize, buffer: &BufferStatus) -> ProgramViewPort {
-        let half_size = height / 2 + (height % 2);
+    pub fn viewport(&mut self, height: usize, buffer: &BufferStatus) -> ProgramViewPort {
+        self.cut_buffer(&buffer);
+
         let len = self.code.len();
-        
 
-        let mut program_cursor = *(self.machine_buffer.first().unwrap_or(&self.cursor));
+        let start_offset =  height.saturating_sub(self.machine_buffer.len()) / 2;
 
-        if let Some(buffer_size) = self.machine_buffer_size {
-            let offset = buffer_size - buffer.lines;
-            if offset>0 {
-                program_cursor += offset;
-            }
-        }
+        let program_cursor = *(self.machine_buffer.first().unwrap_or(&self.cursor));
 
-        if program_cursor >= len {
-            let start = len.saturating_sub(height);
-            return ProgramViewPort{
-                program_lines: self.code[start..].to_vec(),
-                cursor: height,
-                end_of_program_reached: self.eop_reached_in_machine_buffer,
-                buffer: None,
-            };
-        }
-
-        let start = if program_cursor > half_size {
-            (program_cursor - half_size).min(len.saturating_sub(height))
+        let start = if program_cursor > start_offset {
+            program_cursor - start_offset
         } else {
             0
         };
+
         let end = (start + height).min(len);
         
         let buffer = if self.machine_buffer.len()>0 {
+            self.log(LogLevel::Info, format!("$$$$$$ current command line : {}", self.machine_buffer.first().unwrap_or(&start)));
             Some((
                 *(self.machine_buffer.first().unwrap_or(&start)),
                 *(self.machine_buffer.last().unwrap_or(&start))
@@ -178,54 +194,64 @@ impl Program {
             None
         };
 
+
         ProgramViewPort {
-            program_lines: self.code[start..end].to_vec(),
-            cursor: program_cursor - start,
-            end_of_program_reached: self.eop_reached_in_machine_buffer,
+            program_lines: self.code
+                .iter()
+                .enumerate()
+                .map(|(num, line)| (num, line.clone()))
+                .collect::<Vec<(usize, String)>>()[start..end].to_vec(),
             buffer,
+            stop: self.eop_reached_in_machine_buffer,
         }
     }
 }
 
 
 pub struct ProgramViewPort{
-    pub program_lines: Vec<String>, 
-    pub cursor: usize,
+    pub program_lines: Vec<(usize, String)>, 
     pub buffer: Option<(usize,usize)>,
-    // pub buffer_start: usize,
-    // pub buffer_end: usize,
-    pub end_of_program_reached: bool,
+    pub stop: bool,
 }
 
 impl<'a> Into<Text<'a>> for ProgramViewPort {
     fn into(self) -> Text<'a> {
+        let size = self.program_lines.len();
         let lines: Vec<Line> = self.program_lines
             .iter()
             .enumerate()
-            .map(|(i, l)| {
-                let mut rendered_line = l.clone();
+            .map(|(i, line)| {
+                let mut rendered_line = line.1.clone();
+                let index = line.0;
 
-                if i == self.cursor && self.end_of_program_reached{
-                    rendered_line = format!("█  {}", rendered_line);
-                } else if i == self.cursor {
-                    rendered_line = format!(">  {}", rendered_line);
-                } else {
-                    rendered_line = format!("   {}", rendered_line);
+                let mut style: Style = Style::default();
+                let mut prefix = " ";
+
+                if self.stop && i == size - 1 && self.buffer.is_none() {
+                    style = style.fg(Color::Red);
+                    prefix = "█";
                 }
-
-                let mut style = if i == self.cursor {
-                    Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
-                } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
-                    Style::default().fg(Color::Green)
-                } else {
-                    Style::default().fg(Color::White)
-                };
 
                 if let Some(buffer) = self.buffer {
-                    if i >= buffer.0 && i <= buffer.1 {
-                        style = style.add_modifier(ratatui::style::Modifier::ITALIC)
+                    if index >= buffer.0 && index <= buffer.1 {
+                        style = style.fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD);
+                        prefix = "│";
+                    }
+
+                    if index == buffer.0 {
+                        prefix = "┌";
+                    }
+
+                    if index == buffer.1 {
+                        prefix = "└";
                     }
                 }
+
+                if rendered_line.starts_with('(') || rendered_line.starts_with('%') || rendered_line.starts_with(';') {
+                    style = style.fg(Color::Green);
+                };
+
+                rendered_line.insert_str(0, prefix);
 
                 Line::from(Span::styled(rendered_line, style))
             })
@@ -235,107 +261,3 @@ impl<'a> Into<Text<'a>> for ProgramViewPort {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn program_at(lines: &[&str], cursor: usize) -> Program {
-        let mut p = Program::new(lines.iter().map(|s| s.to_string()).collect());
-        p.cursor = cursor;
-        p
-    }
-
-    fn default_buffer() -> BufferStatus {
-        BufferStatus::default()
-    }
-
-    const CODE: [&str; 10] = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"];
-
-    #[test]
-    fn window_empty_program() {
-        let viewport = program_at(&[], 0).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert!(window.is_empty());
-        assert_eq!(effective, 5);
-    }
-
-    #[test]
-    fn window_cursor_at_start() {
-        let viewport = program_at(&CODE, 0).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
-        assert_eq!(effective, 0);
-    }
-
-    #[test]
-    fn window_cursor_near_start() {
-        let viewport = program_at(&CODE, 2).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["a", "b", "c", "d", "e"]);
-        assert_eq!(effective, 2);
-    }
-
-    #[test]
-    fn window_centers_cursor() {
-        let viewport = program_at(&CODE, 5).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["c", "d", "e", "f", "g"]);
-        assert_eq!(effective, 3);
-    }
-
-    #[test]
-    fn window_cursor_near_end() {
-        let viewport = program_at(&CODE, 8).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
-        assert_eq!(effective, 3);
-    }
-
-    #[test]
-    fn window_cursor_at_last_line() {
-        let viewport = program_at(&CODE, 9).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
-        assert_eq!(effective, 4);
-    }
-
-    #[test]
-    fn window_cursor_past_end() {
-        let viewport = program_at(&CODE, 10).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["f", "g", "h", "i", "j"]);
-        assert_eq!(effective, 5);
-    }
-
-    #[test]
-    fn window_code_shorter_than_height() {
-        let viewport = program_at(&["a", "b", "c"], 1).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["a", "b", "c"]);
-        assert_eq!(effective, 1);
-    }
-
-    #[test]
-    fn window_cursor_past_end_short_code() {
-        let viewport = program_at(&["a", "b", "c"], 3).viewport(5, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["a", "b", "c"]);
-        assert_eq!(effective, 5);
-    }
-
-    #[test]
-    fn window_even_height() {
-        let viewport = program_at(&CODE, 5).viewport(4, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["d", "e", "f", "g"]);
-        assert_eq!(effective, 2);
-    }
-
-    #[test]
-    fn window_even_height_cursor_at_last_line() {
-        let viewport = program_at(&CODE, 9).viewport(4, &default_buffer());
-        let (window, effective) = (viewport.program_lines, viewport.cursor);
-        assert_eq!(window, vec!["g", "h", "i", "j"]);
-        assert_eq!(effective, 3);
-    }
-}

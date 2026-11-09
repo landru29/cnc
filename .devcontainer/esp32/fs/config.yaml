@@ -6,27 +6,30 @@ kinematics:
   Cartesian:
 
 stepping:
-  engine: Timed
+  engine: TIMED
+  pulse_us: 200
+
+use_line_numbers: true
 
 axes:
   shared_stepper_disable_pin: NO_PIN
   x:
-    steps_per_mm: 2
-    max_rate_mm_per_min: 120
+    steps_per_mm: 10
+    max_rate_mm_per_min: 6000
     motor0:
       stepstick:
         step_pin: gpio.4
         direction_pin: gpio.16:low
   y:
-    steps_per_mm: 2
-    max_rate_mm_per_min: 120
+    steps_per_mm: 10
+    max_rate_mm_per_min: 6000
     motor0:
       stepstick:
         step_pin: gpio.17
-        direction_pin: gpio.21:high
+        direction_pin: gpio.21:low
   z:
-    steps_per_mm: 2
-    max_rate_mm_per_min: 120
+    steps_per_mm: 10
+    max_rate_mm_per_min: 6000
     motor0:
       stepstick:
         step_pin: gpio.18

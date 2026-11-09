@@ -5,7 +5,9 @@ set -e
 littlefs-python create /fs /tmp/littlefs.bin \
   --fs-size=$((LFS_SIZE)) --block-size=4096
 
-esptool.py --chip esp32 merge_bin -o /tmp/flash.bin --fill-flash-size 4MB \
+esptool.py --chip esp32 merge_bin -o /tmp/flash.bin \
+  --flash_mode dio --flash_freq 40m --flash_size 4MB \
+  --fill-flash-size 4MB \
   0x1000  /firmware/bootloader.bin \
   0x8000  /firmware/partitions.bin \
   0xe000  /firmware/boot_app0.bin \
@@ -13,8 +15,10 @@ esptool.py --chip esp32 merge_bin -o /tmp/flash.bin --fill-flash-size 4MB \
   $LFS_OFFSET /tmp/littlefs.bin
 
 exec qemu-system-xtensa -nographic -machine esp32 \
+  -icount shift=2 \
   -drive file=/tmp/flash.bin,if=mtd,format=raw \
   -serial tcp:0.0.0.0:5555,server,wait \
   -global driver=timer.esp32.timg,property=wdt_disable,value=true \
   -gdb tcp::1234 \
-  -d unimp,guest_errors -D /tmp/qemu.log
+  -no-reboot \
+  -d guest_errors,cpu_reset -D /tmp/qemu.log

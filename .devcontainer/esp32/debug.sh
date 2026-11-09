@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /FluidNC-main
+cd /fluidnc
 xtensa-esp32-elf-gdb /firmware/firmware.elf -ex "target remote :1234"
 
 
