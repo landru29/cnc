@@ -212,8 +212,7 @@ impl Application {
             return Ok(())
         }
 
-        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
-
+        let prog = self.gcode.as_ref().ok_or(anyhow::anyhow!("missing program"))?;
         if prog.eop_reached_in_machine_buffer {
             self.program_running = false;
             return Ok(());
@@ -226,14 +225,15 @@ impl Application {
             return Err(anyhow::anyhow!("machine is in alarm state"));
         }
 
+        self.log(LogLevel::Info, format!("Buffer: {} lines / {} bytes", buffer.lines, buffer.bytes));
+        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
         prog.set_initial_machine_buffer_size(buffer.lines as usize);
 
-        self.to_cnc.push("------------".to_string());
         match prog.process(&buffer) {
             Ok(data) => {
                 data.iter().for_each(|command| {
                     self.to_cnc.push(command.clone());
-                    self.log(LogLevel::Info, format!(">> {}", command.clone()));
+                    self.log(LogLevel::Info, format!(" ({}) >> {}", command.clone().len(), command.clone()));
                     if Self::send_command(
                         None,
                         &self.command_tx,

@@ -5,22 +5,7 @@ use ratatui::{
     text::{Line, Span, Text},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Direction {
-    Forward,
-    Backward,
-}
-
 use super::status::BufferStatus;
-
-impl From<Direction> for i16 {
-    fn from(direction: Direction) -> Self {
-        match direction {
-            Direction::Backward => -1,
-            Direction::Forward => 1,
-        }
-    }
-}
 
 #[derive(Clone)]
 pub struct Program {
@@ -75,32 +60,37 @@ impl Program {
         self.machine_buffer = self.machine_buffer[start_index..].to_vec();
     }
 
-    fn lines(&self, current: usize, count: usize, direction: Direction) -> Result<Vec<usize>> {
+    fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
         let mut output: Vec<usize> = vec![];
         if current > self.code.len() {
             return Err(anyhow::anyhow!("end of program reached"));
         }
 
-        let step: i64 = i16::from(direction) as i64;
         let mut current_cursor = current as i64;
+        let mut remaining_bytes = max_bytes;
 
         for _ in 0..count {
-            current_cursor += step;
+            current_cursor += 1;
             if current_cursor < 0 || current_cursor >= self.code.len() as i64 {
                 break;
             }
 
-            while current_cursor >= 0
-                && current_cursor < self.code.len() as i64
+            while current_cursor < self.code.len() as i64
                 && !Self::is_code_line(&self.code[current_cursor as usize])
             {
-                current_cursor += step;
+                current_cursor += 1;
             }
 
-            if current_cursor >= 0
-                && current_cursor < self.code.len() as i64
+
+            if current_cursor < self.code.len() as i64
                 && Self::is_code_line(&self.code[current_cursor as usize])
             {
+                let line_length = self.code[current_cursor as usize].len();
+                if line_length > remaining_bytes {
+                    break;
+                }
+                
+                remaining_bytes -= line_length+1; // +1 for newline character
                 output.push(current_cursor as usize);
             }
         }
@@ -113,7 +103,7 @@ impl Program {
         
         let cursor = self.cursor;
         let line_map =  self
-            .lines(cursor, buffer.lines, Direction::Forward)
+            .lines(cursor, buffer.lines,buffer.bytes)
             .map_err(|err| {
                 self.eop_reached_in_machine_buffer = true;
                 err
@@ -192,8 +182,6 @@ pub struct ProgramViewPort{
     pub program_lines: Vec<String>, 
     pub cursor: usize,
     pub buffer: Option<(usize,usize)>,
-    // pub buffer_start: usize,
-    // pub buffer_end: usize,
     pub end_of_program_reached: bool,
 }
 
@@ -213,19 +201,17 @@ impl<'a> Into<Text<'a>> for ProgramViewPort {
                     rendered_line = format!("   {}", rendered_line);
                 }
 
-                let mut style = if i == self.cursor {
-                    Style::default().fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
-                } else if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
-                    Style::default().fg(Color::Green)
-                } else {
-                    Style::default().fg(Color::White)
-                };
+                let mut style: Style = Style::default();
 
                 if let Some(buffer) = self.buffer {
                     if i >= buffer.0 && i <= buffer.1 {
-                        style = style.add_modifier(ratatui::style::Modifier::ITALIC)
+                        style = style.fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
                     }
                 }
+
+                if l.starts_with('(') || l.starts_with('%') || l.starts_with(';') {
+                    style = style.fg(Color::Green);
+                };
 
                 Line::from(Span::styled(rendered_line, style))
             })
