@@ -15,16 +15,12 @@ use std::{
 
 use crate::{
     frontend::layout::Frontend, grbl::{
-        configuration::Configuration, 
-        helper::Helper, 
-        program::Program, 
-        status::{
-            State, 
+        configuration::Configuration, helper::Helper, program::Program, status::{
+            State,
             Status,
         },
     }, serial::feedback::Feedback
-};
-use crate::logging::ErrorLogger;
+};use crate::logging::ErrorLogger;
 use crate::logging::Level as LogLevel;
 
 use super::keys::{
@@ -34,7 +30,7 @@ use super::keys::{
 
 
 pub struct Application {
-    program_running: bool,
+    // program_running: bool,
     gcode: Option<Program>,
     to_cnc: Vec<String>,
     event_manager: EventManager,
@@ -66,7 +62,7 @@ impl Application {
         }
 
         Self {
-            program_running: false,
+            // program_running: false,
             gcode,
             to_cnc: vec![],
             event_manager: EventManager::new(),
@@ -137,7 +133,8 @@ impl Application {
                         )?;
                     },
                     KeyEvent::ProgramStop => {
-                        self.program_running = true;
+                        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
+                        prog.running = false;
                         for cmd in vec!["!".to_string(), Self::ctrl_x()].iter() {
                             Self::send_command(
                                 Some(&mut self.to_cnc),
@@ -151,13 +148,16 @@ impl Application {
                         if let Some(state) = &self.machine_configuration.status.state {
                             match state {
                                 State::Idle => {
-                                    self.program_running = true;
+                                    let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
+                                    prog.running = true;
                                 }
                                 _ => {},
                             };
                         };
                     },
                     KeyEvent::ProgramPause => {
+                        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
+                        prog.running = false;
                         Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
@@ -185,7 +185,8 @@ impl Application {
                         self.running.store(false, Ordering::Relaxed);
                     },
                     KeyEvent::DeviceReset => {
-                        self.program_running = false;
+                        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
+                        prog.running = false;
                         Self::send_command(
                             None,
                             &self.command_tx,
@@ -204,18 +205,10 @@ impl Application {
     }
 
     fn process_program(&mut self) -> AnyhowResult<()>{
-        if self.gcode.is_none() {
-            self.program_running = false;
-        }
+        let program_running = self.gcode.as_ref().map(|prog| prog.running).unwrap_or(false);
 
-        if !self.program_running {
+        if !program_running {
             return Ok(())
-        }
-
-        let prog = self.gcode.as_ref().ok_or(anyhow::anyhow!("missing program"))?;
-        if prog.eop_reached_in_machine_buffer {
-            self.program_running = false;
-            return Ok(());
         }
 
         let buffer = self.machine_configuration.status.buffer.as_ref().ok_or(anyhow::anyhow!("missing buffer information"))?;
@@ -225,28 +218,45 @@ impl Application {
             return Err(anyhow::anyhow!("machine is in alarm state"));
         }
 
-        self.log(LogLevel::Info, format!("Buffer: {} lines / {} bytes", buffer.lines, buffer.bytes));
-        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
-        prog.set_initial_machine_buffer_size(buffer.lines as usize);
+        let buffer_lines = buffer.lines;
+        let buffer_bytes = buffer.bytes;
+        self.log(LogLevel::Info, format!("Buffer: {} lines / {} bytes", buffer_lines, buffer_bytes));
 
-        match prog.process(&buffer) {
-            Ok(data) => {
-                data.iter().for_each(|command| {
-                    self.to_cnc.push(command.clone());
-                    self.log(LogLevel::Info, format!(" ({}) >> {}", command.clone().len(), command.clone()));
-                    if Self::send_command(
-                        None,
-                        &self.command_tx,
-                        self.logger.as_ref(),
-                        command.clone(),
-                    )
-                    .is_err()
-                    {
-                        self.program_running = false;
-                    }
-                });
+        let commands = {
+            let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
+            if prog.eop_reached_in_machine_buffer {
+                prog.running = false;
+                return Ok(());
             }
-            Err(error) => self.log(LogLevel::Error, error),
+
+            prog.set_initial_machine_buffer_size(buffer_lines as usize);
+
+            match prog.process(&buffer) {
+                Ok(data) => data,
+                Err(error) => {
+                    self.log(LogLevel::Error, error);
+                    return Ok(());
+                }
+            }
+        };
+
+        for command in commands {
+            let command_text = command.clone();
+            self.to_cnc.push(command_text.clone());
+            self.log(LogLevel::Info, format!(" ({}) >> {}", command_text.len(), command_text));
+            if Self::send_command(
+                None,
+                &self.command_tx,
+                self.logger.as_ref(),
+                command_text.clone(),
+            )
+            .is_err()
+            {
+                if let Some(prog) = self.gcode.as_mut() {
+                    prog.running = false;
+                }
+                return Ok(());
+            }
         }
 
         Ok(())
@@ -260,6 +270,8 @@ impl Application {
             .try_iter()
             .collect();
 
+        let program_running = self.gcode.as_ref().map(|prog| prog.running).unwrap_or(false);
+
         for line in lines {
             match line {
                 Feedback::Status(status) => {
@@ -267,7 +279,15 @@ impl Application {
                         Status::RealTime(status) => {
                             self.machine_configuration = self.machine_configuration.clone() + status;
 
+                            self.gcode.as_ref().map(|prog| {
+                                self.log(LogLevel::Info, format!("Program cursor position: {}", prog.cursor));
+                            });
+
                             self.process_program()?;
+
+                            self.gcode.as_ref().map(|prog| {
+                                self.log(LogLevel::Info, format!("Program cursor position: {}", prog.cursor));
+                            });
                         }
                         Status::Error(code) => {
                             self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
@@ -292,11 +312,11 @@ impl Application {
         frontend.draw(
             &self.machine_configuration,
             &self.to_cnc,
-            self.gcode.as_ref(),
+            self.gcode.as_mut(),
             &self.event_manager,
             self.cursor_position,
             &self.command_helper,
-            &self.program_running,
+            &program_running,
         ).map_err(|e| {
             self.log(LogLevel::Error, &e);
             self.running.store(false, Ordering::Relaxed);

@@ -26,8 +26,8 @@ use std::io::{
 };
 use tui_markdown;
 use crate::grbl::{
-    configuration::Configuration, helper::Helper, program::{self, Program}, status::{
-        BufferStatus, Mode, State,
+    configuration::Configuration, helper::Helper, program::Program, status::{
+        Mode, State,
     },
 };
 use crate::application::keys::EventManager;
@@ -70,7 +70,7 @@ impl Frontend {
         &mut self,
         machine_configuration: &Configuration,
         to_cnc: &[String],
-        gcode: Option<&Program>,
+        gcode: Option<&mut Program>,
         event_manager: &EventManager,
         cursor_position: u16,
         command_helper: &Helper,
@@ -132,15 +132,11 @@ impl Frontend {
             // ************************************
             // **            Program             **
             // ************************************
-            if let Some(prog) = gcode.cloned() {
+            let has_gcode = gcode.is_some();
+            if let Some(prog) = gcode {
+                let buffer = machine_configuration.status.buffer.clone().unwrap_or_default();
                 let viewport = prog
-                    .to_owned()
-                    .viewport(
-                        rows[1].height as usize - 2, 
-                        machine_configuration.status.buffer
-                            .as_ref()
-                            .unwrap_or(&BufferStatus::default())
-                    );
+                    .viewport(rows[1].height as usize - 2, &buffer);
                 f.render_widget(
                     Paragraph::new(viewport).block(Block::default().borders(Borders::ALL)),
                     cols[1],
@@ -182,10 +178,14 @@ impl Frontend {
                 ("Ctrl+X", "Reset"),
             ];
 
-            if gcode.is_some() {
-                if *program_running {
-                    keys.push(("F4", "Stop"));
-                } else {
+            let status = &machine_configuration.status.clone().state.map_or(State::Idle, |x| x);
+
+            if status == &State::Alarm {
+                keys.push(("F4", "Stop"));
+            }
+
+            if has_gcode {
+                if !*program_running {
                     keys.push(("F5", "Run"));
                 }
 
