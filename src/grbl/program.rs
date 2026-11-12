@@ -7,9 +7,13 @@ use ratatui::{
 
 use super::status::BufferStatus;
 
+use crate::logging::Logger;
+use crate::logging::Level as LogLevel;
+
 #[derive(Clone)]
 pub struct Program {
     code: Vec<String>,
+    logger: Option<Logger>,
     pub cursor: usize, // last line in machine buffer
     pub eop_reached_in_machine_buffer: bool, // End Of Program
     machine_buffer_size: Option<usize>,
@@ -18,14 +22,23 @@ pub struct Program {
 }
 
 impl Program {
-    pub fn new(data: Vec<String>) -> Self {
+    pub fn new(data: Vec<String>, logger: Option<Logger>) -> Self {
         Self{
             code: data,
+            logger,
             cursor: 0,
             eop_reached_in_machine_buffer: false,
             machine_buffer_size: None,
             machine_buffer: vec![],
             running: false,
+        }
+    }
+
+    fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
+        if let Some(logger) = &self.logger {
+            if let Err(log_error) = logger.log(level, &msg) {
+                eprintln!("Failed to write frontend error to log file: {log_error}");
+            }
         }
     }
 
@@ -36,12 +49,12 @@ impl Program {
         };
     }
 
-    pub fn open(filename: String) -> Result<Self> {
+    pub fn open(filename: String, logger: Option<Logger>) -> Result<Self> {
         let file_content = std::fs::read_to_string(filename)?;
 
         let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
-        Ok(Self::new(gcode))
+        Ok(Self::new(gcode, logger))
     }
 
     fn cut_buffer(&mut self, buffer: &BufferStatus) {
@@ -63,9 +76,14 @@ impl Program {
     }
 
     fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
+        self.log(LogLevel::Info, format!("lines() called with current: {}, count: {}, max_bytes: {}", current, count, max_bytes));
         let mut output: Vec<usize> = vec![];
         if current >= self.code.len() {
             return Err(anyhow::anyhow!("end of program reached"));
+        }
+
+        if count == 0 || max_bytes == 0 {
+            return Ok(output);
         }
 
         let mut current_cursor = current as i64;
@@ -167,6 +185,7 @@ impl Program {
                 .map(|(num, line)| (num, line.clone()))
                 .collect::<Vec<(usize, String)>>()[start..end].to_vec(),
             buffer,
+            stop: self.eop_reached_in_machine_buffer,
         }
     }
 }
@@ -175,6 +194,7 @@ impl Program {
 pub struct ProgramViewPort{
     pub program_lines: Vec<(usize, String)>, 
     pub buffer: Option<(usize,usize)>,
+    pub stop: bool,
 }
 
 impl<'a> Into<Text<'a>> for ProgramViewPort {
@@ -188,25 +208,33 @@ impl<'a> Into<Text<'a>> for ProgramViewPort {
                 let index = line.0;
 
                 let mut style: Style = Style::default();
+                let mut prefix = " ";
+
+                if self.stop && i == size - 1 && self.buffer.is_none() {
+                    style = style.fg(Color::Red);
+                    prefix = "█";
+                }
 
                 if let Some(buffer) = self.buffer {
                     if index >= buffer.0 && index <= buffer.1 {
-                        style = style.fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD)
+                        style = style.fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD);
+                        prefix = "│";
                     }
-                }
 
-                if i == size - 1 && (self.buffer.is_none() || self.buffer.unwrap().1 < index) {
-                    style = style.fg(Color::Red);
-                    rendered_line.insert_str(0, "#");
-                } else if index == self.buffer.map(|b| b.1).unwrap_or(0) {
-                    rendered_line.insert_str(0, ">");
-                } else {
-                    rendered_line.insert_str(0, " ");
+                    if index == buffer.0 {
+                        prefix = "┌";
+                    }
+
+                    if index == buffer.1 {
+                        prefix = "└";
+                    }
                 }
 
                 if rendered_line.starts_with('(') || rendered_line.starts_with('%') || rendered_line.starts_with(';') {
                     style = style.fg(Color::Green);
                 };
+
+                rendered_line.insert_str(0, prefix);
 
                 Line::from(Span::styled(rendered_line, style))
             })

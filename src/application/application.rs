@@ -20,7 +20,8 @@ use crate::{
             Status,
         },
     }, serial::feedback::Feedback
-};use crate::logging::ErrorLogger;
+};
+use crate::logging::Logger;
 use crate::logging::Level as LogLevel;
 
 use super::keys::{
@@ -30,17 +31,16 @@ use super::keys::{
 
 
 pub struct Application {
-    // program_running: bool,
     gcode: Option<Program>,
     to_cnc: Vec<String>,
     event_manager: EventManager,
     machine_configuration: Configuration,
     pub tx: Sender<Feedback>,
     command_tx: Sender<String>,
-    rx: Option<Receiver<Feedback>>,
+    rx: Receiver<Feedback>,
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
-    logger: Option<ErrorLogger>,
+    logger: Option<Logger>,
     command_helper: Helper,
     cursor_position: u16,
 }
@@ -51,7 +51,7 @@ pub struct ThreadedApp {
 }
 
 impl Application {
-    pub fn new(gcode: Option<Program>, description: String, logger: Option<ErrorLogger>, command_helper: Helper) -> Self {
+    pub fn new(gcode: Option<Program>, description: String, logger: Option<Logger>, command_helper: Helper) -> Self {
         let (tx, rx) = channel::<Feedback>();
         let (command_tx, command_rx) = channel::<String>();
 
@@ -69,7 +69,7 @@ impl Application {
             machine_configuration: Configuration::new(description),
             tx,
             command_tx,
-            rx: Some(rx),
+            rx,
             command_rx: Some(command_rx),
             running: Arc::new(AtomicBool::new(true)),
             logger,
@@ -78,9 +78,9 @@ impl Application {
         }
     }
 
-    fn log(&self, level: LogLevel, error: impl std::fmt::Display) {
+    fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
         if let Some(logger) = &self.logger {
-            if let Err(log_error) = logger.log(level, &error) {
+            if let Err(log_error) = logger.log(level, &msg) {
                 eprintln!("Failed to write frontend error to log file: {log_error}");
             }
         }
@@ -89,7 +89,7 @@ impl Application {
     fn send_command(
         to_cnc: Option<&mut Vec<String>>,
         command_tx: &Sender<String>,
-        logger: Option<&ErrorLogger>,
+        logger: Option<&Logger>,
         cmd: String,
     ) -> AnyhowResult<()> {
         if !cmd.is_empty() {
@@ -262,32 +262,18 @@ impl Application {
         Ok(())
     }
 
-    fn run_iteration(&mut self, frontend: &mut Frontend/*terminal: &mut Terminal<CrosstermBackend<Stdout>>*/) -> AnyhowResult<()> {
-        let lines: Vec<Feedback> = self
-            .rx
-            .as_ref()
-            .expect("Frontend receiver must be available while running")
-            .try_iter()
-            .collect();
-
+    fn run_iteration(&mut self, frontend: &mut Frontend) -> AnyhowResult<()> {
         let program_running = self.gcode.as_ref().map(|prog| prog.running).unwrap_or(false);
 
-        for line in lines {
+        while let Ok(line) = self.rx.try_recv() {
             match line {
                 Feedback::Status(status) => {
+                    self.log(LogLevel::Info, "Received status update from GRBL");
                     match status {
                         Status::RealTime(status) => {
                             self.machine_configuration = self.machine_configuration.clone() + status;
 
-                            self.gcode.as_ref().map(|prog| {
-                                self.log(LogLevel::Info, format!("Program cursor position: {}", prog.cursor));
-                            });
-
                             self.process_program()?;
-
-                            self.gcode.as_ref().map(|prog| {
-                                self.log(LogLevel::Info, format!("Program cursor position: {}", prog.cursor));
-                            });
                         }
                         Status::Error(code) => {
                             self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
@@ -301,9 +287,11 @@ impl Application {
                     };
                 },
                 Feedback::MachineConfig(machine_config) => {
+                    self.log(LogLevel::Info, "Received machine configuration update from GRBL");
                     self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 },
                 Feedback::Message(msg) => {
+                    self.log(LogLevel::Info, "Received message from GRBL");
                     self.to_cnc.push(msg);
                 },
             };

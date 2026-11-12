@@ -27,7 +27,7 @@ impl Configuration {
 
 impl<'a> Into<Text<'a>> for Configuration {
     fn into(self) -> Text<'a> {
-        Text::from(format!("{}    {}    {}    {}    {}    {}    {}",
+        let mut output = Text::from(format!("{}    {}    {}    {}    {}    {}    {}",
             self.config.distance,
             self.status
                 .state
@@ -46,7 +46,13 @@ impl<'a> Into<Text<'a>> for Configuration {
                 .unwrap_or_else(|| "-".to_string()),
             self.status.step_mode,
             self.description,
-        ))
+        ));
+
+        if let Some(line_number) = self.status.line_number {
+            output.extend(Text::from(format!("    line: {}", line_number)));
+        }
+
+        output
     }
 }
 

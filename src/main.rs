@@ -10,7 +10,7 @@ use application::routing::Channels;
 use clap::Parser;
 use application::application::{Application, ThreadedApp};
 use grbl::program::Program;
-use logging::ErrorLogger;
+use logging::Logger;
 use sys_locale::get_locale;
 
 use crate::grbl::helper::{Helper, Lang};
@@ -36,7 +36,7 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let logger = cli.log_file.as_deref().map(ErrorLogger::new).transpose()?;
+    let logger = cli.log_file.as_deref().map(Logger::new).transpose()?;
 
     let lang: Lang = if cli.lang != "" {
         Lang::from(cli.lang)
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
     } else {
         let filename = cli.extras[0].clone();
         println!("Filename : {}", filename);
-        Some(Program::open(filename)?)
+        Some(Program::open(filename, logger.clone())?)
     };
 
     // Open serial port.
@@ -62,6 +62,7 @@ fn main() -> Result<()> {
         &cli.port,
         cli.baudrate,
         std::time::Duration::from_millis(100),
+        logger.clone(),
     )?;
     serial_client.start()?;
 
@@ -75,7 +76,7 @@ fn main() -> Result<()> {
 
     // Create UI
     let mut ui = ThreadedApp::new();
-    let mut frontend = Application::new(program, cli.port, logger, command_helper);
+    let mut frontend = Application::new(program, cli.port, logger.clone(), command_helper);
     let frontend_command_rx = frontend.take_command_receiver()?;
     let frontend_tx = frontend.tx.clone();
     ui.start(frontend)?;
