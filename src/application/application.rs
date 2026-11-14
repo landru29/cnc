@@ -1,4 +1,5 @@
 use anyhow::Result as AnyhowResult;
+use crossterm::event::KeyCode::F;
 
 use std::{
     sync::{
@@ -290,10 +291,13 @@ impl Application {
                     self.log(LogLevel::Info, "Received machine configuration update from GRBL");
                     self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 },
-                Feedback::Message(msg) => {
-                    self.log(LogLevel::Info, "Received message from GRBL");
-                    self.to_cnc.push(msg);
+                Feedback::Ok => {
+                    self.log(LogLevel::Info, "Received OK from GRBL");
                 },
+                // Feedback::Message(msg) => {
+                //     self.log(LogLevel::Info, "Received message from GRBL");
+                //     self.to_cnc.push(msg);
+                // },
             };
         }
 

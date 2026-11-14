@@ -3,14 +3,16 @@ use std::str::FromStr;
 use crate::grbl::{machine::MachineConfig, status::Status};
 
 pub enum Feedback {
-    Message(String),
     Status(Status),
+    Ok,
     MachineConfig(MachineConfig)
 }
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeedbackError {}
+pub enum FeedbackError {
+    ParseError(String),
+}
 
 impl fmt::Display for FeedbackError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -18,6 +20,15 @@ impl fmt::Display for FeedbackError {
     }
 }
 
+impl fmt::Display for Feedback {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Feedback::Status(status) => write!(f, "Status: {:?}", status),
+            Feedback::MachineConfig(config) => write!(f, "MachineConfig: {:?}", config),
+            Feedback::Ok => write!(f, "Ok"),
+        }
+    }
+}
 
 impl std::error::Error for FeedbackError {}
 
@@ -29,8 +40,10 @@ impl FromStr for Feedback {
             Ok(Feedback::Status(status))
         } else if let Ok(machine_config) = line.parse::<MachineConfig>() {
             Ok(Feedback::MachineConfig(machine_config))
+        } else if line.to_lowercase() == "ok" {
+            Ok(Feedback::Ok)
         } else {
-            Ok(Feedback::Message(line.to_string()))
+            Err(FeedbackError::ParseError(line.to_string()))
         }
     }
 }

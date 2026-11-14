@@ -94,13 +94,18 @@ impl Client {
                                     continue
                                 }
 
-                                let Ok(feedback) = line.parse::<Feedback>();
+                                match line.parse::<Feedback>() {
+                                    Ok(feedback) => {
+                                        Self::log(logger.as_ref(), LogLevel::Info, format!("[COMM] <<< Received data from serial port: {}", feedback));
 
-                                Self::log(logger.as_ref(), LogLevel::Info, format!("[COMM] <<< Received feedback from serial port: {}", line));
-
-                                if let Err(e) = serial_tx.send(feedback) {
-                                    eprintln!("Error sending data: {}", e);
-                                }
+                                        if let Err(e) = serial_tx.send(feedback) {
+                                            eprintln!("Error sending data: {}", e);
+                                        }
+                                    },
+                                    Err(e) => {
+                                        Self::log(logger.as_ref(), LogLevel::Error, format!("Error parsing feedback from serial port: {}", e));
+                                    }
+                                };
                             }
                         }
                     }
