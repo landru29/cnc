@@ -37,7 +37,7 @@ pub struct Application {
     machine_configuration: Configuration,
     pub tx: Sender<Feedback>,
     command_tx: Sender<String>,
-    rx: Receiver<Feedback>,
+    rx: Option<Receiver<Feedback>>,
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
     logger: Option<Logger>,
@@ -69,7 +69,7 @@ impl Application {
             machine_configuration: Configuration::new(description),
             tx,
             command_tx,
-            rx,
+            rx: Some(rx),
             command_rx: Some(command_rx),
             running: Arc::new(AtomicBool::new(true)),
             logger,
@@ -80,7 +80,8 @@ impl Application {
 
     fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
         if let Some(logger) = &self.logger {
-            if let Err(log_error) = logger.log(level, &msg) {
+            let message = format!("[APP] {msg}");
+            if let Err(log_error) = logger.log(level, &message) {
                 eprintln!("Failed to write frontend error to log file: {log_error}");
             }
         }
@@ -150,6 +151,7 @@ impl Application {
                                 State::Idle => {
                                     let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
                                     prog.running = true;
+                                    self.log(LogLevel::Info, "================= Starting program execution =================");
                                 }
                                 _ => {},
                             };
@@ -265,7 +267,7 @@ impl Application {
     fn run_iteration(&mut self, frontend: &mut Frontend) -> AnyhowResult<()> {
         let program_running = self.gcode.as_ref().map(|prog| prog.running).unwrap_or(false);
 
-        while let Ok(line) = self.rx.try_recv() {
+        while let Ok(line) = self.rx.as_ref().unwrap().try_recv() {
             match line {
                 Feedback::Status(status) => {
                     self.log(LogLevel::Info, "Received status update from GRBL");
@@ -290,10 +292,7 @@ impl Application {
                     self.log(LogLevel::Info, "Received machine configuration update from GRBL");
                     self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 },
-                Feedback::Message(msg) => {
-                    self.log(LogLevel::Info, "Received message from GRBL");
-                    self.to_cnc.push(msg);
-                },
+                Feedback::Ok => {},
             };
         }
 

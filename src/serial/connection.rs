@@ -43,7 +43,8 @@ impl Client {
 
     fn log(logger: Option<&Logger>, level: LogLevel, msg: impl std::fmt::Display) {
         if let Some(logger) = logger {
-            if let Err(log_error) = logger.log(level, &msg) {
+            let message = format!("[SERIAL] {}", msg);
+            if let Err(log_error) = logger.log(level, &message) {
                 eprintln!("Failed to write frontend error to log file: {log_error}");
             }
         }
@@ -77,7 +78,7 @@ impl Client {
                         data_to_send.push('\n');
                     }
 
-                    Self::log(logger.as_ref(), LogLevel::Info, format!("[COMM] >>> Sending command to serial port: {}", data_to_send.trim_end()));
+                    Self::log(logger.as_ref(), LogLevel::Info, format!(">>> Sending command to serial port: {}", data_to_send.trim_end()));
 
                     if let Err(e) = port.write_all(data_to_send.as_bytes()) {
                         Self::log(logger.as_ref(), LogLevel::Error, format!("Error writing to serial port: {}", e));
@@ -94,13 +95,18 @@ impl Client {
                                     continue
                                 }
 
-                                let Ok(feedback) = line.parse::<Feedback>();
+                                match line.parse::<Feedback>() {
+                                    Ok(feedback) => {
+                                        Self::log(logger.as_ref(), LogLevel::Info, format!("<<< Received data from serial port: {}", feedback));
 
-                                Self::log(logger.as_ref(), LogLevel::Info, format!("[COMM] <<< Received feedback from serial port: {}", line));
-
-                                if let Err(e) = serial_tx.send(feedback) {
-                                    eprintln!("Error sending data: {}", e);
-                                }
+                                        if let Err(e) = serial_tx.send(feedback) {
+                                            eprintln!("Error sending data: {}", e);
+                                        }
+                                    },
+                                    Err(e) => {
+                                        Self::log(logger.as_ref(), LogLevel::Error, format!("Error parsing feedback from serial port: {}", e));
+                                    }
+                                };
                             }
                         }
                     }

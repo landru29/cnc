@@ -5,7 +5,6 @@ use super::position::Position;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
-    Ok,
     Error(u8),
     Alarm(u8),
     Message(String),
@@ -41,9 +40,7 @@ impl FromStr for Status {
 
     fn from_str(line: &str) -> Result<Self, Self::Err> {
         let data = line.trim();
-        if data == "ok" {
-            Ok(Status::Ok)
-        } else if data.starts_with("error:") {
+        if data.starts_with("error:") {
             let code = data[6..]
                 .trim()
                 .parse::<u8>()
@@ -198,9 +195,25 @@ impl Add for RealTime {
     type Output = Self;
 
     fn add(self, other: Self) -> Self {
+        let new_machine_position = if let Some(other_machine_position) = &other.machine_position {
+            if let Some(machine_position) = &self.machine_position {
+                Some(Position {
+                    x: other_machine_position.x, 
+                    y: other_machine_position.y, 
+                    z: other_machine_position.z, 
+                    dx: other_machine_position.x - machine_position.x, 
+                    dy: other_machine_position.y - machine_position.y, 
+                    dz: other_machine_position.z - machine_position.z,
+                })
+            } else {
+                other.machine_position
+            }
+        } else {
+            self.machine_position
+        };
         Self {
             state: if other.state == None {self.state} else {other.state},
-            machine_position: if other.machine_position == None {self.machine_position} else {other.machine_position},
+            machine_position: new_machine_position,
             work_position: if other.work_position == None {self.work_position} else {other.work_position},
             work_coordinate_offset: if other.work_coordinate_offset == None {self.work_coordinate_offset} else {other.work_coordinate_offset},
             line_number: if other.line_number == None {self.line_number} else {other.line_number},
@@ -338,7 +351,7 @@ fn parse_coords(s: &str) -> Result<Position, StatusError> {
         .trim()
         .parse::<f64>()
         .map_err(|_| StatusError::Malformed(s.to_string()))?;
-    Ok(Position{x, y, z})
+    Ok(Position{x, y, z, dx:0.0, dy:0.0, dz:0.0})
 }
 
 fn parse_state(part: &str) -> Option<State> {
@@ -370,9 +383,9 @@ mod tests {
             status,
             RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:10.0, y:20.0, z:30.0}),
-                work_position: Some(Position{x:1.0, y:2.0, z:3.0}),
-                work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0}),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx:0.0, dy:0.0, dz:0.0}),
+                work_position: Some(Position{x:1.0, y:2.0, z:3.0, dx:0.0, dy:0.0, dz:0.0}),
+                work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0, dx:0.0, dy:0.0, dz:0.0}),
                 line_number: Some(42),
                 buffer: Some(BufferStatus { lines: 7, bytes: 8 }),
                 feed_speed: None,
@@ -400,7 +413,6 @@ mod tests {
 
     #[test]
     fn parses_status_variants() {
-        assert!(matches!("ok".parse(), Ok(Status::Ok)));
         assert!(matches!("error:12".parse(), Ok(Status::Error(12))));
         assert!(matches!("ALARM:4".parse(), Ok(Status::Alarm(4))));
         assert!(matches!(
@@ -412,7 +424,7 @@ mod tests {
             "<Idle|MPos:10,20,30>".parse(),
             Ok(Status::RealTime(rt)) if rt == RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:10.0, y:20.0, z:30.0}),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx:0.0, dy:0.0, dz:0.0}),
                 work_position: None,
                 work_coordinate_offset: None,
                 line_number: None,
@@ -456,7 +468,7 @@ mod tests {
             status,
             Status::RealTime(rt) if rt == RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:1.0, y:2.0, z:3.0}),
+                machine_position: Some(Position{x:1.0, y:2.0, z:3.0, dx:0.0, dy:0.0, dz:0.0}),
                 work_position: None,
                 work_coordinate_offset: None,
                 line_number: None,

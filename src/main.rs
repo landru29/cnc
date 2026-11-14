@@ -67,7 +67,7 @@ fn main() -> Result<()> {
     serial_client.start()?;
 
     // Report positions in machine coordinates, with buffer status
-    vec!["$10=3", "G21", "?", "$G"].iter().for_each(|cmd| {
+    vec!["$10=3", "G21", "$G"].iter().for_each(|cmd| {
         serial_client
             .tx
             .send(format!("{}\n", cmd).to_string())

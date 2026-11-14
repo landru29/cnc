@@ -36,7 +36,8 @@ impl Program {
 
     fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
         if let Some(logger) = &self.logger {
-            if let Err(log_error) = logger.log(level, &msg) {
+            let message = format!("[PROGRAM] {}", msg);
+            if let Err(log_error) = logger.log(level, &message) {
                 eprintln!("Failed to write frontend error to log file: {log_error}");
             }
         }
@@ -71,12 +72,21 @@ impl Program {
             return;
         }
 
-        let start_index = self.machine_buffer.len().saturating_sub(max_buffer_size - buffer.lines);
+        let new_buffer_size = if max_buffer_size > buffer.lines {
+            max_buffer_size - buffer.lines
+        } else {
+            0
+        };
+
+        let start_index = self.machine_buffer.len().saturating_sub(new_buffer_size);
+
+        self.log(LogLevel::Info, format!("[BUFFER] cutting: {:?}, device buffer lines: {}, new buffer size: {}, cutting index: {}", self.machine_buffer, buffer.lines, new_buffer_size, start_index));
+
         self.machine_buffer = self.machine_buffer[start_index..].to_vec();
     }
 
     fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
-        self.log(LogLevel::Info, format!("lines() called with current: {}, count: {}, max_bytes: {}", current, count, max_bytes));
+        self.log(LogLevel::Info, format!("collecting lines with current: {}, count: {}, max_bytes: {}", current, count, max_bytes));
         let mut output: Vec<usize> = vec![];
         if current >= self.code.len() {
             return Err(anyhow::anyhow!("end of program reached"));
@@ -119,11 +129,15 @@ impl Program {
             }
         }
 
+        self.log(LogLevel::Info, format!("collected lines: {:?}", output));
+
         Ok(output)
     }
 
     pub fn process(&mut self, buffer: &BufferStatus) -> Result<Vec<String>> {
+        self.log(LogLevel::Info, format!("[BUFFER] init: {:?}", self.machine_buffer));
         self.cut_buffer(&buffer);
+        self.log(LogLevel::Info, format!("[BUFFER] cut: {:?} - {}", self.machine_buffer, buffer));
         
         let cursor = self.cursor;
         let line_map =  self
@@ -142,6 +156,7 @@ impl Program {
         }
 
         self.machine_buffer.extend(line_map);
+        self.log(LogLevel::Info, format!("[BUFFER] extended: {:?}", self.machine_buffer));
 
         Ok(result)
     }
@@ -155,13 +170,14 @@ impl Program {
     pub fn viewport(&mut self, height: usize, buffer: &BufferStatus) -> ProgramViewPort {
         self.cut_buffer(&buffer);
 
-        let half_size = height / 2 + (height % 2);
         let len = self.code.len();
-        
+
+        let start_offset =  height.saturating_sub(self.machine_buffer.len()) / 2;
+
         let program_cursor = *(self.machine_buffer.first().unwrap_or(&self.cursor));
 
-        let start = if program_cursor > half_size {
-            (program_cursor - half_size).min(len.saturating_sub(height))
+        let start = if program_cursor > start_offset {
+            program_cursor - start_offset
         } else {
             0
         };
@@ -169,6 +185,7 @@ impl Program {
         let end = (start + height).min(len);
         
         let buffer = if self.machine_buffer.len()>0 {
+            self.log(LogLevel::Info, format!("$$$$$$ current command line : {}", self.machine_buffer.first().unwrap_or(&start)));
             Some((
                 *(self.machine_buffer.first().unwrap_or(&start)),
                 *(self.machine_buffer.last().unwrap_or(&start))
