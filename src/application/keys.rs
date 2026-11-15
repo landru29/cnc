@@ -103,8 +103,13 @@ impl EventManager {
                     Ok(Some(KeyEvent::CursorAt(self.cursor_position)))
                 },
                 (KeyCode::Char(c), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
-                    // self.current_command.push(c.to_ascii_uppercase());
-                    self.current_command.insert(self.cursor_position as usize, c.to_ascii_uppercase());
+                    let mut char = c.to_ascii_uppercase();
+                    if char == 'O' 
+                        && self.cursor_position > 0
+                        && self.current_command.chars().nth(self.cursor_position as usize -1).unwrap() == 'G' {
+                        char = '0';
+                    }
+                    self.current_command.insert(self.cursor_position as usize, char);
                     self.cursor_position +=1;
                     Ok(Some(KeyEvent::CursorAt(self.cursor_position)))
                 },

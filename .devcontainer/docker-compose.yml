@@ -27,4 +27,3 @@ services:
     environment:
       LFS_OFFSET: "0x3d0000"
       LFS_SIZE: "0x20000"
-    expose: ["5555"]

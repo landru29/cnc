@@ -1,0 +1,54 @@
+From a2922979ea51e3f8090a88c7c221d4d450f826f4 Mon Sep 17 00:00:00 2001
+From: FluidNC QEMU fix <noreply@example.invalid>
+Date: Sun, 15 Nov 2026 15:25:24 +0000
+Subject: [PATCH] StepTimer: rewind and freeze the counter before arming the
+ alarm in stepTimerStart
+
+stepTimerStart() programs an alarm 10 ticks ahead, but the counter is
+not stopped or rewound between moves.  By the time the alarm is armed
+the counter can already be past 10.  Under QEMU (esp32 timg model) an
+alarm value at or below the current counter is never armed, so the step
+ISR never fires, the machine stays in Run and the next move hangs.
+
+Disable the counter and alarm, rewind the counter to 0, then program and
+enable them, so each start is identical to the first one.  Done in both
+the IDF 4.x and IDF 5.x code paths.
+---
+ FluidNC/esp32/StepTimer.cpp | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/FluidNC/esp32/StepTimer.cpp b/FluidNC/esp32/StepTimer.cpp
+index 0e64453..e0e7591 100644
+--- a/FluidNC/esp32/StepTimer.cpp
++++ b/FluidNC/esp32/StepTimer.cpp
+@@ -34,6 +34,14 @@ static void IRAM_ATTR timer_isr(void* arg) {
+ static uint32_t old_ticks = 0xffffffff;
+ 
+ void IRAM_ATTR stepTimerStart() {
++    // Freeze and rewind the counter before programming the alarm, so that
++    // every start looks like the first one: the counter is at 0 when the
++    // alarm is armed.  Without this, the counter keeps running between
++    // moves, and an alarm value (10) that is already behind the counter
++    // is never armed by some emulated timer models (QEMU esp32 timg).
++    timer_ll_set_counter_enable(&TIMERG0, TIMER_0, false);
++    timer_ll_set_alarm_enable(&TIMERG0, TIMER_0, false);
++    timer_ll_set_counter_value(&TIMERG0, TIMER_0, 0ULL);
+     timer_ll_set_alarm_value(&TIMERG0, TIMER_0, 10ULL);  // Interrupt very soon to start the stepping
+     old_ticks = 10ULL;
+     timer_ll_set_alarm_enable(&TIMERG0, TIMER_0, true);
+@@ -112,6 +120,13 @@ static void IRAM timer_isr(void* arg) {
+ static uint32_t old_ticks = 0xffffffff;
+ 
+ void IRAM stepTimerStart() {
++    // Freeze the counter before rewinding and programming the alarm, so that
++    // every start looks like the first one: the counter is at 0 when the
++    // alarm is armed.  Otherwise the counter has already advanced past the
++    // alarm value (10) by the time it is armed, and some emulated timer
++    // models (QEMU esp32 timg) then never arm the alarm.
++    timer_ll_enable_counter(&TIMERG0, TIMER_0, false);
++    timer_ll_enable_alarm(&TIMERG0, TIMER_0, false);
+     timer_ll_set_reload_value(&TIMERG0, TIMER_0, 0ULL);
+     timer_ll_trigger_soft_reload(&TIMERG0, TIMER_0);
+     timer_ll_set_alarm_value(&TIMERG0, TIMER_0, 10ULL);  // Interrupt very soon to start the stepping
+-- 
+2.43.0
