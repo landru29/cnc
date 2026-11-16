@@ -9,6 +9,7 @@ use super::status::BufferStatus;
 
 use crate::logging::Logger;
 use crate::logging::Level as LogLevel;
+use regex::Regex;
 
 #[derive(Clone)]
 pub struct Program {
@@ -119,7 +120,13 @@ impl Program {
             if current_cursor < self.code.len() as i64
                 && Self::is_code_line(&self.code[current_cursor as usize])
             {
-                let line_length = self.code[current_cursor as usize].len();
+                let mut line = self.code[current_cursor as usize].clone();
+
+                if let Some(pos) = line.find(|c| c == ';' || c == '(') {
+                    line.truncate(pos);
+                }
+
+                let line_length = line.len();
                 if line_length > remaining_bytes {
                     break;
                 }
@@ -148,7 +155,15 @@ impl Program {
             })?;
         let result = line_map
             .iter()
-            .map(|index| self.code[*index].clone())
+            .map(|index| {
+                let mut line = self.code[*index].clone();
+
+                if let Some(pos) = line.find(|c| c == ';' || c == '(') {
+                    line.truncate(pos);
+                }
+                
+                line
+            })
             .collect::<Vec<String>>();
 
         if let Some(last) = line_map.last() {
@@ -167,7 +182,7 @@ impl Program {
             && !line.trim().is_empty()
     }
 
-    pub fn viewport(&mut self, height: usize, buffer: &BufferStatus) -> ProgramViewPort {
+    pub fn viewport(&mut self, height: usize, buffer: &BufferStatus, current_line: Option<u32>) -> ProgramViewPort {
         self.cut_buffer(&buffer);
 
         let len = self.code.len();
@@ -203,6 +218,7 @@ impl Program {
                 .collect::<Vec<(usize, String)>>()[start..end].to_vec(),
             buffer,
             stop: self.eop_reached_in_machine_buffer,
+            current_line: current_line.map(|v| v as usize),
         }
     }
 }
@@ -212,48 +228,68 @@ pub struct ProgramViewPort{
     pub program_lines: Vec<(usize, String)>, 
     pub buffer: Option<(usize,usize)>,
     pub stop: bool,
+    current_line: Option<usize>
 }
 
 impl<'a> Into<Text<'a>> for ProgramViewPort {
     fn into(self) -> Text<'a> {
+        let line_number_regex = Regex::new(r"(?i)N(\d+)").unwrap();
+
         let size = self.program_lines.len();
         let lines: Vec<Line> = self.program_lines
             .iter()
             .enumerate()
             .map(|(i, line)| {
-                let mut rendered_line = line.1.clone();
                 let index = line.0;
 
-                let mut style: Style = Style::default();
-                let mut prefix = " ";
-
-                if self.stop && i == size - 1 && self.buffer.is_none() {
-                    style = style.fg(Color::Red);
-                    prefix = "█";
-                }
-
-                if let Some(buffer) = self.buffer {
-                    if index >= buffer.0 && index <= buffer.1 {
-                        style = style.fg(Color::LightBlue).add_modifier(ratatui::style::Modifier::BOLD);
-                        prefix = "│";
+                let prefix = if self.stop && i == size - 1 && self.buffer.is_none() {
+                        "█"
+                    } else if let Some(buffer) = self.buffer {
+                    if index == buffer.0 && index == buffer.1 {
+                        "╠"
+                    } else if index > buffer.0 && index < buffer.1 {
+                        "║"
+                    } else if index == buffer.0 {
+                        "╔"
+                    } else if index == buffer.1 {
+                        "╚"
+                    } else {
+                        " "
                     }
-
-                    if index == buffer.0 {
-                        prefix = "┌";
-                    }
-
-                    if index == buffer.1 {
-                        prefix = "└";
-                    }
-                }
-
-                if rendered_line.starts_with('(') || rendered_line.starts_with('%') || rendered_line.starts_with(';') {
-                    style = style.fg(Color::Green);
+                } else {
+                    " "
                 };
 
-                rendered_line.insert_str(0, prefix);
+                let rendered_line = line.1.clone();
 
-                Line::from(Span::styled(rendered_line, style))
+                let code_style = if let Some(line) = self.current_line 
+                   && let Some(caps) = line_number_regex.captures(rendered_line.as_str())
+                   && caps[1].parse::<usize>().unwrap() == line {
+                    Style::default().fg(Color::Blue)
+                } else {
+                    Style::default()
+                };
+
+                let spans: Vec<Span> = if rendered_line.starts_with('(') || rendered_line.starts_with('%') || rendered_line.starts_with(';') {
+                    vec![Span::styled(rendered_line, Style::default().fg(Color::Green))]
+                } else if let Some(pos) = rendered_line.find(|c| c == ';' || c == '(') {
+                    let (before, after) = rendered_line.split_at(pos);
+
+                    vec![
+                        Span::styled(before.to_owned(), code_style),
+                        Span::styled(after.to_owned(), Style::default().fg(Color::Green))
+                    ]
+                } else {
+                    vec![Span::styled(rendered_line, code_style)]
+                };
+
+                let mut output = vec![
+                    Span::styled(prefix, Style::default().fg(Color::Blue)),
+                ];
+
+                output.extend(spans);
+
+                Line::from(output)
             })
             .collect();
 

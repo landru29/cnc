@@ -3,7 +3,7 @@ use std::ops::Add;
 use super::machine::MachineConfig;
 use super::status::RealTime;
 use ratatui::{
-    text::Text,
+    style::{Color, Style}, text::{Line, Span, Text},
 };
 
 
@@ -27,32 +27,51 @@ impl Configuration {
 
 impl<'a> Into<Text<'a>> for Configuration {
     fn into(self) -> Text<'a> {
-        let mut output = Text::from(format!("{}    {}    {}    {}    {}    {}    {}",
-            self.config.distance,
-            self.status
-                .state
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "unknown".to_string()),
-            self.status.position(),
-            self.status
-                .feed_speed
-                .as_ref()
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            self.status.buffer
-                .as_ref()
-                .map(|b| b.to_string())
-                .unwrap_or_else(|| "-".to_string()),
-            self.status.step_mode,
-            self.description,
-        ));
+        let status = self.status.state.clone()
+            .map(|state| state.into())
+            .unwrap_or_else(|| Span::styled("",  Style::default()));
 
-        if let Some(line_number) = self.status.line_number {
-            output.extend(Text::from(format!("    line: {}", line_number)));
-        }
+        let feed_speed = self.status.clone().feed_speed
+            .map(|fs| fs.into())
+            .unwrap_or_else(|| Line::from(Span::styled("", Style::default())));
 
-        output
+        let buffer = self.status.clone().buffer
+            .map(|b| b.into())
+            .unwrap_or_else(|| Line::from(Span::styled("", Style::default())));
+
+        let line_num = self.status.line_number
+            .map(|b| Line::from(vec![
+                Span::styled("Ln: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(format!("{}", b), Style::default().fg(Color::White)),
+            ]))
+            .unwrap_or_else(|| Line::from(Span::styled("", Style::default())));
+
+        let distance: Span<'a> = self.config.distance.into();
+        let step_mode: Span<'a> = self.status.clone().step_mode.into();
+
+        let lines = vec![
+            Line::from(distance),
+            Line::from(Span::styled("    ", Style::default())),
+            Line::from(status),
+            Line::from(Span::styled("    ", Style::default())),
+            self.status.position().into(),
+            Line::from(Span::styled("    ", Style::default())),
+            feed_speed,
+            Line::from(Span::styled("    ", Style::default())),
+            buffer,
+            Line::from(Span::styled("    ", Style::default())),
+            Line::from(step_mode),
+            Line::from(Span::styled("    ", Style::default())),
+            Line::from(Span::styled(self.description, Style::default())),
+            Line::from(Span::styled("    ", Style::default())),
+            line_num,
+        ];
+
+        Text::from(Line::from(
+            lines.into_iter()
+                .flat_map(|line| line.spans)
+                .collect::<Vec<_>>()
+        ))
     }
 }
 

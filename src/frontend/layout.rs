@@ -136,7 +136,7 @@ impl Frontend {
             if let Some(prog) = gcode {
                 let buffer = machine_configuration.status.buffer.clone().unwrap_or_default();
                 let viewport = prog
-                    .viewport(rows[1].height as usize - 2, &buffer);
+                    .viewport(rows[1].height as usize - 2, &buffer, machine_configuration.status.line_number);
                 f.render_widget(
                     Paragraph::new(viewport).block(Block::default().borders(Borders::ALL)),
                     cols[1],

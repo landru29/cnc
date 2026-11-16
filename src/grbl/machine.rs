@@ -4,6 +4,11 @@
 use std::fmt;
 use std::str::FromStr;
 
+
+use ratatui::{
+    style::{Color, Style}, text::Span,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Motion {
     #[default]
@@ -39,6 +44,12 @@ impl fmt::Display for DistanceMode {
             DistanceMode::Absolute => write!(f, "ABS"),
             DistanceMode::Relative => write!(f, "REL"),
         }
+    }
+}
+
+impl<'a> Into<Span<'a>> for DistanceMode {
+    fn into(self) -> Span<'a> {
+        Span::styled(format!(" {} ", self.to_string()), Style::default().bg(Color::White).fg(Color::Black))
     }
 }
 

@@ -1,7 +1,11 @@
 use std::fmt;
 use std::str::FromStr;
 use std::ops::Add;
-use super::position::Position;
+use ratatui::{
+    style::{Color, Style}, text::{Line, Span},
+};
+
+use super::position::{Position, Delta};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
@@ -75,6 +79,15 @@ pub struct BufferStatus {
     pub bytes: usize,
 }
 
+impl<'a> Into<Line<'a>> for BufferStatus {
+    fn into(self) -> Line<'a> {
+        Line::from(vec![
+            Span::styled("Bf: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{},{}", self.lines, self.bytes), Style::default().fg(Color::White))
+        ])
+    }
+}
+
 impl Default for BufferStatus {
     fn default() -> Self {
         Self { lines: 0, bytes: 0 }
@@ -91,6 +104,15 @@ impl fmt::Display for BufferStatus {
 pub struct FeedSpeed {
     pub feed: u32,
     pub speed: u32,
+}
+
+impl<'a> Into<Line<'a>> for FeedSpeed {
+    fn into(self) -> Line<'a> {
+        Line::from(vec![
+            Span::styled("Fs: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(format!("{},{}", self.feed, self.speed), Style::default().fg(Color::White))
+        ])
+    }
 }
 
 impl fmt::Display for FeedSpeed {
@@ -146,6 +168,15 @@ pub enum Mode {
     Program,
 }
 
+impl<'a> Into<Span<'a>> for Mode {
+    fn into(self) -> Span<'a> {
+        match self {
+            Self::Step => Span::styled("step", Style::default()),
+            Self::Program => Span::styled("    ", Style::default()),
+        }
+    }
+}
+
 impl fmt::Display for Mode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -168,6 +199,23 @@ pub enum State {
     Check,
     Home,
     Sleep,
+}
+
+
+impl<'a> Into<Span<'a>> for State {
+    fn into(self) -> Span<'a> {
+        match self {
+            super::status::State::Idle => Span::styled("Idle",  Style::default().fg(Color::Green)),
+            super::status::State::Run => Span::styled("Run",  Style::default().fg(Color::Blue)),
+            super::status::State::Hold(_) => Span::styled("Hold",  Style::default()),
+            super::status::State::Jog => Span::styled("Jog",  Style::default()),
+            super::status::State::Alarm => Span::styled("Alarm",  Style::default().fg(Color::Red)),
+            super::status::State::Door => Span::styled("Door",  Style::default().fg(Color::Yellow)),
+            super::status::State::Check => Span::styled("Check",  Style::default()),
+            super::status::State::Home => Span::styled("Home",  Style::default()),
+            super::status::State::Sleep => Span::styled("Sleep",  Style::default()),
+        }
+    }
 }
 
 impl fmt::Display for State {
@@ -201,9 +249,9 @@ impl Add for RealTime {
                     x: other_machine_position.x, 
                     y: other_machine_position.y, 
                     z: other_machine_position.z, 
-                    dx: other_machine_position.x - machine_position.x, 
-                    dy: other_machine_position.y - machine_position.y, 
-                    dz: other_machine_position.z - machine_position.z,
+                    dx: Delta::new(machine_position.x, other_machine_position.x),
+                    dy: Delta::new(machine_position.y, other_machine_position.y),
+                    dz: Delta::new(machine_position.z, other_machine_position.z),
                 })
             } else {
                 other.machine_position
@@ -351,7 +399,7 @@ fn parse_coords(s: &str) -> Result<Position, StatusError> {
         .trim()
         .parse::<f64>()
         .map_err(|_| StatusError::Malformed(s.to_string()))?;
-    Ok(Position{x, y, z, dx:0.0, dy:0.0, dz:0.0})
+    Ok(Position{x, y, z, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()})
 }
 
 fn parse_state(part: &str) -> Option<State> {
@@ -383,9 +431,9 @@ mod tests {
             status,
             RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx:0.0, dy:0.0, dz:0.0}),
-                work_position: Some(Position{x:1.0, y:2.0, z:3.0, dx:0.0, dy:0.0, dz:0.0}),
-                work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0, dx:0.0, dy:0.0, dz:0.0}),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()}),
+                work_position: Some(Position{x:1.0, y:2.0, z:3.0, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()}),
+                work_coordinate_offset: Some(Position{x:4.0, y:5.0, z:6.0, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()}),
                 line_number: Some(42),
                 buffer: Some(BufferStatus { lines: 7, bytes: 8 }),
                 feed_speed: None,
@@ -424,7 +472,7 @@ mod tests {
             "<Idle|MPos:10,20,30>".parse(),
             Ok(Status::RealTime(rt)) if rt == RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx:0.0, dy:0.0, dz:0.0}),
+                machine_position: Some(Position{x:10.0, y:20.0, z:30.0, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()}),
                 work_position: None,
                 work_coordinate_offset: None,
                 line_number: None,
@@ -468,7 +516,7 @@ mod tests {
             status,
             Status::RealTime(rt) if rt == RealTime {
                 state: Some(State::Idle),
-                machine_position: Some(Position{x:1.0, y:2.0, z:3.0, dx:0.0, dy:0.0, dz:0.0}),
+                machine_position: Some(Position{x:1.0, y:2.0, z:3.0, dx: Delta::default(), dy: Delta::default(), dz: Delta::default()}),
                 work_position: None,
                 work_coordinate_offset: None,
                 line_number: None,
@@ -483,11 +531,6 @@ mod tests {
             "garbage".parse::<Status>(),
             Err(StatusError::NotAStatus)
         ));
-    }
-
-     #[test]
-    fn foo() {
-        let status: Status = "<Hold:0|MPos:-265.819,-265.820,0.000|Bf:15,124|FS:0,0|Pn:Q|Ov:100,100,100>".parse().unwrap();
     }
 }
 
