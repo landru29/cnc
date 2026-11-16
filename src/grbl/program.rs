@@ -18,7 +18,7 @@ pub struct Program {
     pub cursor: usize, // last line in machine buffer
     pub eop_reached_in_machine_buffer: bool, // End Of Program
     machine_buffer_size: Option<usize>,
-    machine_buffer: Vec<usize>,
+    data_sent: Vec<usize>,
     pub running: bool,
 }
 
@@ -30,9 +30,13 @@ impl Program {
             cursor: 0,
             eop_reached_in_machine_buffer: false,
             machine_buffer_size: None,
-            machine_buffer: vec![],
+            data_sent: vec![],
             running: false,
         }
+    }
+
+    pub fn is_running(&self) -> bool {
+        return self.running && !self.eop_reached_in_machine_buffer
     }
 
     fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
@@ -57,33 +61,6 @@ impl Program {
         let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
         Ok(Self::new(gcode, logger))
-    }
-
-    fn cut_buffer(&mut self, buffer: &BufferStatus) {
-        if self.machine_buffer_size.is_none() {
-            self.machine_buffer_size = Some(buffer.lines);
-
-            return
-        }
-
-        let max_buffer_size = self.machine_buffer_size.unwrap();
-        if buffer.lines> max_buffer_size {
-            self.machine_buffer_size = Some(buffer.lines);
-
-            return;
-        }
-
-        let new_buffer_size = if max_buffer_size > buffer.lines {
-            max_buffer_size - buffer.lines
-        } else {
-            0
-        };
-
-        let start_index = self.machine_buffer.len().saturating_sub(new_buffer_size);
-
-        self.log(LogLevel::Info, format!("[BUFFER] cutting: {:?}, device buffer lines: {}, new buffer size: {}, cutting index: {}", self.machine_buffer, buffer.lines, new_buffer_size, start_index));
-
-        self.machine_buffer = self.machine_buffer[start_index..].to_vec();
     }
 
     fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
@@ -142,10 +119,6 @@ impl Program {
     }
 
     pub fn process(&mut self, buffer: &BufferStatus) -> Result<Vec<String>> {
-        self.log(LogLevel::Info, format!("[BUFFER] init: {:?}", self.machine_buffer));
-        self.cut_buffer(&buffer);
-        self.log(LogLevel::Info, format!("[BUFFER] cut: {:?} - {}", self.machine_buffer, buffer));
-        
         let cursor = self.cursor;
         let line_map =  self
             .lines(cursor, buffer.lines,buffer.bytes)
@@ -153,6 +126,11 @@ impl Program {
                 self.eop_reached_in_machine_buffer = true;
                 err
             })?;
+
+        if line_map.is_empty() {
+            return Ok(vec![]);
+        }
+
         let result = line_map
             .iter()
             .map(|index| {
@@ -170,8 +148,7 @@ impl Program {
             self.cursor = *last;
         }
 
-        self.machine_buffer.extend(line_map);
-        self.log(LogLevel::Info, format!("[BUFFER] extended: {:?}", self.machine_buffer));
+        self.data_sent.extend(line_map);
 
         Ok(result)
     }
@@ -183,13 +160,16 @@ impl Program {
     }
 
     pub fn viewport(&mut self, height: usize, buffer: &BufferStatus, current_line: Option<u32>) -> ProgramViewPort {
-        self.cut_buffer(&buffer);
-
         let len = self.code.len();
 
-        let start_offset =  height.saturating_sub(self.machine_buffer.len()) / 2;
+        let machine_buffer_length = if let Some(max_size) = self.machine_buffer_size {max_size - buffer.lines} else {0};
 
-        let program_cursor = *(self.machine_buffer.first().unwrap_or(&self.cursor));
+        let start_offset =  height.saturating_sub(machine_buffer_length) / 2;
+
+        let start_index = self.data_sent.len().saturating_sub(machine_buffer_length);
+        let machine_buffer = self.data_sent[start_index..].to_vec();
+
+        let program_cursor = *(machine_buffer.first().unwrap_or(&self.cursor));
 
         let start = if program_cursor > start_offset {
             program_cursor - start_offset
@@ -199,11 +179,11 @@ impl Program {
 
         let end = (start + height).min(len);
         
-        let buffer = if self.machine_buffer.len()>0 {
-            self.log(LogLevel::Info, format!("$$$$$$ current command line : {}", self.machine_buffer.first().unwrap_or(&start)));
+        let buffer = if machine_buffer_length>0 {
+            self.log(LogLevel::Info, format!("$$$$$$ current command line : {}", machine_buffer.first().unwrap_or(&start)));
             Some((
-                *(self.machine_buffer.first().unwrap_or(&start)),
-                *(self.machine_buffer.last().unwrap_or(&start))
+                *(machine_buffer.first().unwrap_or(&start)),
+                *(machine_buffer.last().unwrap_or(&start))
             ))
         } else {
             None

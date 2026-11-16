@@ -176,11 +176,12 @@ impl Frontend {
                 ("↑/↓", "History"),
                 ("Ctrl+D", "Quit"),
                 ("Ctrl+X", "Reset"),
+                ("Ctrl+R", "Reboot"),
             ];
 
             let status = &machine_configuration.status.clone().state.map_or(State::Idle, |x| x);
 
-            if status == &State::Alarm {
+            if status == &State::Run {
                 keys.push(("F4", "Stop"));
             }
 

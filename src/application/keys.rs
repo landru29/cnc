@@ -19,6 +19,7 @@ pub enum KeyEvent {
     ProgramStepOver,
     AppExit,
     DeviceReset,
+    DeviceReboot,
     CursorAt(u16)
 }
 
@@ -95,6 +96,7 @@ impl EventManager {
                 }
                 (KeyCode::Char('d'), KeyModifiers::CONTROL) => Ok(Some(KeyEvent::AppExit)),
                 (KeyCode::Char('x'), KeyModifiers::CONTROL) => Ok(Some(KeyEvent::DeviceReset)),
+                (KeyCode::Char('r'), KeyModifiers::CONTROL) => Ok(Some(KeyEvent::DeviceReboot)),
                 (KeyCode::Backspace, KeyModifiers::NONE) => {
                     if self.cursor_position>0 {
                         self.current_command.remove(self.cursor_position as usize -1);

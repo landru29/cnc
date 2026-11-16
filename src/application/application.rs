@@ -187,13 +187,25 @@ impl Application {
                         self.running.store(false, Ordering::Relaxed);
                     },
                     KeyEvent::DeviceReset => {
-                        let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
-                        prog.running = false;
+                        if let Some(prog) = self.gcode.as_mut() {
+                            prog.running = false;
+                        }
                         Self::send_command(
                             None,
                             &self.command_tx,
                             self.logger.as_ref(),
                             Self::ctrl_x(),
+                        )?;
+                    },
+                    KeyEvent::DeviceReboot => {
+                        if let Some(prog) = self.gcode.as_mut() {
+                            prog.running = false;
+                        }
+                        Self::send_command(
+                            None,
+                            &self.command_tx,
+                            self.logger.as_ref(),
+                            "$BYE".to_string(),
                         )?;
                     },
                     KeyEvent::CursorAt(position) => {
@@ -226,7 +238,9 @@ impl Application {
 
         let commands = {
             let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
-            if prog.eop_reached_in_machine_buffer {
+            if prog.eop_reached_in_machine_buffer 
+                && let Some(state) = self.machine_configuration.status.state.as_ref()
+                && *state != State::Run {
                 prog.running = false;
                 return Ok(());
             }
