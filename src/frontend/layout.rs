@@ -25,10 +25,16 @@ use std::io::{
     Stdout,
 };
 use tui_markdown;
-use crate::grbl::{
-    configuration::Configuration, helper::Helper, program::Program, status::{
-        Mode, State,
-    },
+use crate::{
+    application::machine::MachineData, 
+    grbl::{
+        configuration::Configuration,
+        helper::Helper,
+        program::Program,
+        status::{
+            Mode, State,
+        },
+    }
 };
 use crate::application::keys::EventManager;
 
@@ -69,7 +75,7 @@ impl Frontend {
     pub fn draw(
         &mut self,
         machine_configuration: &Configuration,
-        to_cnc: &[String],
+        to_cnc: &Vec<MachineData>,
         gcode: Option<&mut Program>,
         event_manager: &EventManager,
         cursor_position: u16,
@@ -122,7 +128,7 @@ impl Frontend {
             let to_cnc_start = to_cnc.len().saturating_sub(to_cnc_visible);
             let visible_commands: Vec<Line> = to_cnc[to_cnc_start..]
                 .iter()
-                .map(|l| Line::from(l.as_str()))
+                .map(|l| l.into())
                 .collect();
             f.render_widget(
                 Paragraph::new(visible_commands).block(Block::default().borders(Borders::ALL)),

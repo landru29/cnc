@@ -35,10 +35,6 @@ impl Program {
         }
     }
 
-    pub fn is_running(&self) -> bool {
-        return self.running && !self.eop_reached_in_machine_buffer
-    }
-
     fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
         if let Some(logger) = &self.logger {
             let message = format!("[PROGRAM] {}", msg);

@@ -5,14 +5,13 @@ use crate::grbl::{machine::MachineConfig, status::Status};
 pub enum Feedback {
     Status(Status),
     Ok,
-    MachineConfig(MachineConfig)
+    MachineConfig(MachineConfig),
+    Other(String),
 }
 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FeedbackError {
-    ParseError(String),
-}
+pub enum FeedbackError {}
 
 impl fmt::Display for FeedbackError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -26,6 +25,7 @@ impl fmt::Display for Feedback {
             Feedback::Ok => write!(f, "Ok"),
             Feedback::Status(status) => write!(f, "Status: {:?}", status),
             Feedback::MachineConfig(config) => write!(f, "MachineConfig: {:?}", config),
+            Feedback::Other(config) => write!(f, "Other: {:?}", config),
         }
     }
 }
@@ -43,7 +43,7 @@ impl FromStr for Feedback {
         } else if line.to_lowercase().trim_end() == "ok".to_string() {
             Ok(Feedback::Ok)
         } else {
-            Err(FeedbackError::ParseError(line.to_string()))
+            Ok(Feedback::Other(line.to_string()))
         }
     }
 }

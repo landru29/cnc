@@ -2,7 +2,8 @@ use std::fmt;
 use std::str::FromStr;
 use std::ops::Add;
 use ratatui::{
-    style::{Color, Style}, text::{Line, Span},
+    style::{Color, Style},
+    text::{Line, Span},
 };
 
 use super::position::{Position, Delta};

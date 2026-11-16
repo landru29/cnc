@@ -77,10 +77,6 @@ impl Delta {
     pub fn new(this: f64, other: f64) -> Self {
         Self(other - this)
     }
-
-    pub fn movement(&self) -> bool {
-        return self.0 != 0.0
-    }
 }
 
 impl fmt::Display for Delta {

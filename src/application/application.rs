@@ -24,15 +24,17 @@ use crate::{
 use crate::logging::Logger;
 use crate::logging::Level as LogLevel;
 
-use super::keys::{
-    EventManager,
-    KeyEvent,
+use super::{
+    keys::{
+        EventManager,
+        KeyEvent,
+    },
+    machine::MachineData,
 };
-
 
 pub struct Application {
     gcode: Option<Program>,
-    to_cnc: Vec<String>,
+    to_cnc: Vec<MachineData>,
     event_manager: EventManager,
     machine_configuration: Configuration,
     pub tx: Sender<Feedback>,
@@ -88,7 +90,7 @@ impl Application {
     }
 
     fn send_command(
-        to_cnc: Option<&mut Vec<String>>,
+        to_cnc: Option<&mut Vec<MachineData>>,
         command_tx: &Sender<String>,
         logger: Option<&Logger>,
         cmd: String,
@@ -98,7 +100,7 @@ impl Application {
                 anyhow::bail!("Exiting application")
             } else {
                 if let Some(echo) = to_cnc {
-                    echo.push(format!("> {cmd}"));
+                    echo.push(MachineData::ToMachine(format!("{cmd}")));
                 }
                 if let Err(error) = command_tx.send(cmd) {
                     if let Some(logger) = logger {
@@ -258,7 +260,7 @@ impl Application {
 
         for command in commands {
             let command_text = command.clone();
-            self.to_cnc.push(command_text.clone());
+            self.to_cnc.push(MachineData::ToMachine(command_text.clone()));
             self.log(LogLevel::Info, format!(" ({}) >> {}", command_text.len(), command_text));
             if Self::send_command(
                 None,
@@ -293,11 +295,11 @@ impl Application {
                         }
                         Status::Error(code) => {
                             self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
-                            self.to_cnc.push(format!("!ERROR! {code}"));
+                            self.to_cnc.push(MachineData::FromMachine(format!("!ERROR! {code}. Type '$X'")));
                         }
                         Status::Alarm(code) => {
                             self.log(LogLevel::Error, format!("GRBL reported ALARM:{code}"));
-                            self.to_cnc.push(format!("!ALARM! {code}"));
+                            self.to_cnc.push(MachineData::FromMachine(format!("!ALARM! {code}. Type '$X'")));
                         }
                         _ => {}
                     };
@@ -306,7 +308,12 @@ impl Application {
                     self.log(LogLevel::Info, "Received machine configuration update from GRBL");
                     self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 },
-                Feedback::Ok => {},
+                Feedback::Ok => {
+                    //self.to_cnc.push(MachineData::FromMachine("ok".to_string()));
+                },
+                Feedback::Other(data) => {
+                    self.to_cnc.push(MachineData::FromMachine(data));
+                },
             };
         }
 
