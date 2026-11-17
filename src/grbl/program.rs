@@ -22,6 +22,18 @@ pub struct Program {
     pub running: bool,
 }
 
+pub fn commented_line(line: String) -> (String, String) {
+    if line.starts_with('(') || line.starts_with('%') || line.starts_with(';') {
+        (String::default(), line.clone())
+    } else if let Some(pos) = line.find(|c| c == ';' || c == '(') {
+        let (before, after) = line.split_at(pos);
+
+        (before.to_owned(), after.to_owned())
+    } else {
+        (line.clone(), String::default())
+    }
+}
+
 impl Program {
     pub fn new(data: Vec<String>, logger: Option<Logger>) -> Self {
         Self{
@@ -93,13 +105,9 @@ impl Program {
             if current_cursor < self.code.len() as i64
                 && Self::is_code_line(&self.code[current_cursor as usize])
             {
-                let mut line = self.code[current_cursor as usize].clone();
+                let code_comment = commented_line(self.code[current_cursor as usize].clone());
 
-                if let Some(pos) = line.find(|c| c == ';' || c == '(') {
-                    line.truncate(pos);
-                }
-
-                let line_length = line.len();
+                let line_length = code_comment.0.len();
                 if line_length > remaining_bytes {
                     break;
                 }
@@ -246,18 +254,11 @@ impl<'a> Into<Text<'a>> for ProgramViewPort {
                     Style::default()
                 };
 
-                let spans: Vec<Span> = if rendered_line.starts_with('(') || rendered_line.starts_with('%') || rendered_line.starts_with(';') {
-                    vec![Span::styled(rendered_line, Style::default().fg(Color::Green))]
-                } else if let Some(pos) = rendered_line.find(|c| c == ';' || c == '(') {
-                    let (before, after) = rendered_line.split_at(pos);
-
-                    vec![
-                        Span::styled(before.to_owned(), code_style),
-                        Span::styled(after.to_owned(), Style::default().fg(Color::Green))
-                    ]
-                } else {
-                    vec![Span::styled(rendered_line, code_style)]
-                };
+                let code_comment = commented_line(rendered_line);
+                let spans = vec![
+                    Span::styled(code_comment.0, code_style),
+                    Span::styled(code_comment.1, Style::default().fg(Color::Green))
+                ];
 
                 let mut output = vec![
                     Span::styled(prefix, Style::default().fg(Color::Blue)),

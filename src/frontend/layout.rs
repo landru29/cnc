@@ -153,10 +153,12 @@ impl Frontend {
             // **         Command prompt         **
             // ************************************
             let prompt = "Enter command ";
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(prompt, Style::default().fg(Color::Yellow)),
-                Span::raw(<&str>::from(event_manager)),
-            ]);
+            ];
+            let line: Line = event_manager.clone().into();
+            spans.extend(line.iter().map(|span| span.clone()).collect::<Vec<Span>>());
+            let line = Line::from(spans);
             f.render_widget(Paragraph::new(line), rows[3]);
             f.set_cursor_position(Position::new(
                 rows[3].x + prompt.len() as u16 + cursor_position,
