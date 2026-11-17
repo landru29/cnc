@@ -18,6 +18,9 @@ pub struct Client {
     command_rx: Option<Receiver<String>>,
     serial_tx: Sender<Feedback>,
     logger: Option<Logger>,
+    path: String,
+    baudrate: u32,
+    timeout: Duration,
 }
 
 impl Client {
@@ -38,6 +41,9 @@ impl Client {
             command_rx: Some(command_rx),
             serial_tx,
             logger,
+            path: path.to_string(),
+            baudrate,
+            timeout,
         })
     }
 
@@ -66,58 +72,96 @@ impl Client {
         let mut port = port.try_clone()?;
         let running_thread = Arc::clone(&self.running);
         let logger = self.logger.clone();
+        let path = self.path.clone();
+        let baudrate = self.baudrate;
+        let timeout = self.timeout;
 
         let handle = std::thread::spawn(move || {
             let mut read_buffer: Vec<u8> = vec![0; 1024];
             let mut line_buffer = BufferedData::new();
 
+            // Outer loop: attempts to (re)connect to the serial port.
             while running_thread.load(Ordering::Relaxed) {
-                while let Ok(command) = command_rx.try_recv() {
-                    let mut data_to_send = command.clone();
-                    if !data_to_send.ends_with('\n') {
-                        data_to_send.push('\n');
-                    }
+                // Inner loop: read from the currently open port until the
+                // connection is lost, then break out to attempt a reconnect.
+                let mut connected = true;
+                while connected && running_thread.load(Ordering::Relaxed) {
+                    while let Ok(command) = command_rx.try_recv() {
+                        let mut data_to_send = command.clone();
+                        if !data_to_send.ends_with('\n') {
+                            data_to_send.push('\n');
+                        }
 
-                    Self::log(logger.as_ref(), LogLevel::Info, format!(">>> Sending command to serial port: {}", data_to_send.trim_end()));
+                        Self::log(logger.as_ref(), LogLevel::Info, format!(">>> Sending command to serial port: {}", data_to_send.trim_end()));
 
-                    if let Err(e) = port.write_all(data_to_send.as_bytes()) {
-                        Self::log(logger.as_ref(), LogLevel::Error, format!("Error writing to serial port: {}", e));
-                    }
-                }
-
-                match port.read(read_buffer.as_mut_slice()) {
-                    Ok(bytes_read) => {
-                        if bytes_read > 0 {
-                            line_buffer.push(&read_buffer[..bytes_read]);
-
-                            for line in line_buffer.by_ref() {
-                                if line.is_empty() {
-                                    continue
-                                }
-
-                                match line.parse::<Feedback>() {
-                                    Ok(feedback) => {
-                                        Self::log(logger.as_ref(), LogLevel::Info, format!("<<< Received data from serial port: {}", feedback));
-
-                                        if let Err(e) = serial_tx.send(feedback) {
-                                            eprintln!("Error sending data: {}", e);
-                                        }
-                                    },
-                                    Err(e) => {
-                                        Self::log(logger.as_ref(), LogLevel::Error, format!("Error parsing feedback from serial port: {}", e));
-                                    }
-                                };
-                            }
+                        if let Err(e) = port.write_all(data_to_send.as_bytes()) {
+                            Self::log(logger.as_ref(), LogLevel::Error, format!("Error writing to serial port: {}", e));
+                            connected = false;
+                            break;
                         }
                     }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
-                    Err(e) => {
-                        eprintln!("Error reading from serial port: {}", e);
+
+                    if !connected {
                         break;
+                    }
+
+                    match port.read(read_buffer.as_mut_slice()) {
+                        Ok(bytes_read) => {
+                            if bytes_read > 0 {
+                                line_buffer.push(&read_buffer[..bytes_read]);
+
+                                for line in line_buffer.by_ref() {
+                                    if line.is_empty() {
+                                        continue
+                                    }
+
+                                    match line.parse::<Feedback>() {
+                                        Ok(feedback) => {
+                                            Self::log(logger.as_ref(), LogLevel::Info, format!("<<< Received data from serial port: {}", feedback));
+
+                                            if let Err(e) = serial_tx.send(feedback) {
+                                                eprintln!("Error sending data: {}", e);
+                                            }
+                                        },
+                                        Err(e) => {
+                                            Self::log(logger.as_ref(), LogLevel::Error, format!("Error parsing feedback from serial port: {}", e));
+                                        }
+                                    };
+                                }
+                            }
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+                        Err(e) => {
+                            Self::log(logger.as_ref(), LogLevel::Error, format!("Connection to serial port lost: {}", e));
+                            connected = false;
+                        }
                     }
                 }
 
+                if !running_thread.load(Ordering::Relaxed) {
+                    break;
+                }
 
+                // Attempt to reconnect.
+                Self::log(logger.as_ref(), LogLevel::Info, "Attempting to reconnect to serial port...");
+                loop {
+                    if !running_thread.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    match serialport::new(&path, baudrate).timeout(timeout).open() {
+                        Ok(new_port) => {
+                            Self::log(logger.as_ref(), LogLevel::Info, "Reconnected to serial port");
+                            port = new_port;
+                            line_buffer = BufferedData::new();
+                            break;
+                        }
+                        Err(e) => {
+                            Self::log(logger.as_ref(), LogLevel::Error, format!("Reconnect failed: {}", e));
+                            std::thread::sleep(Duration::from_secs(1));
+                        }
+                    }
+                }
             }
         });
 
