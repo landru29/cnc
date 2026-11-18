@@ -136,6 +136,13 @@ static WORD: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?P<letter>[A-Za-z])(?:(?P<space>\s*)(?P<value>[-+]?(?:\d+\.?\d*|\.\d+)))?").unwrap()
 });
 
+fn is_known_letter(letter: char) -> bool {
+    matches!(
+        letter.to_ascii_uppercase(),
+        'G' | 'M' | 'X' | 'Y' | 'Z' | 'A' | 'B' | 'C' | 'I' | 'J' | 'K' | 'R' | 'F' | 'S' | 'T' | 'N' | 'P'
+    )
+}
+
 fn letter_style(letter: char) -> Style {
     let base = Style::new().add_modifier(Modifier::BOLD);
     match letter.to_ascii_uppercase() {
@@ -145,7 +152,7 @@ fn letter_style(letter: char) -> Style {
         'I' | 'J' | 'K' | 'R' => base.fg(Color::LightYellow),
         'F' | 'S' => base.fg(Color::Green),
         'T' | 'N' | 'P' => base.fg(Color::Blue),
-        _ => base.fg(Color::White),
+        _ => Style::new().add_modifier(unknown_style()).fg(Color::White),
     }
 }
 
@@ -154,8 +161,13 @@ fn value_style(letter: char) -> Style {
         'G' => Style::new().fg(Color::Cyan),
         'M' => Style::new().fg(Color::Magenta),
         'F' | 'S' => Style::new().fg(Color::LightGreen),
-        _ => Style::new().fg(Color::White),
+        _ if is_known_letter(letter) => Style::new().fg(Color::White),
+        _ => Style::new().add_modifier(Modifier::ITALIC).fg(Color::White),
     }
+}
+
+fn unknown_style() -> Modifier{
+    Modifier::DIM.union(Modifier::ITALIC).union(Modifier::UNDERLINED)
 }
 
 impl<'a> Into<Line<'a>> for EventManager {
@@ -183,7 +195,10 @@ impl<'a> Into<Line<'a>> for EventManager {
             let whole = caps.get(0).unwrap();
 
             if whole.start() > last {
-                spans.push(Span::raw(code[last..whole.start()].to_string()));
+                spans.push(Span::styled(
+                    code[last..whole.start()].to_string(),
+                    Style::new().add_modifier(unknown_style()).fg(Color::White),
+                ));
             }
 
             let letter = &caps["letter"];
@@ -201,6 +216,13 @@ impl<'a> Into<Line<'a>> for EventManager {
             last = whole.end();
         }
 
+        if last < code.len() {
+            spans.push(Span::styled(
+                code[last..].to_string(),
+                Style::new().add_modifier(unknown_style()).fg(Color::White),
+            ));
+        }
+
         spans.push(Span::styled(code_comment.1, Style::new().fg(Color::Green)));
 
         Line::from(spans)
@@ -210,5 +232,84 @@ impl<'a> Into<Line<'a>> for EventManager {
 impl<'a> From<&'a EventManager> for &'a str {
     fn from(em: &'a EventManager) -> &'a str {
         em.current_command.as_str()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn string_representation(line: &Line) -> String {
+        line.spans
+            .iter()
+            .map(|s| {
+                s.content.to_string()
+            })
+            .collect::<Vec<String>>().join("")
+    }
+
+    /// Build an EventManager with a given current command.
+    fn manager_with(command: &str) -> EventManager {
+        let mut em = EventManager::new();
+        em.current_command = command.to_string();
+        em
+    }
+
+    #[test]
+    fn empty_command_returns_default_line() {
+        let em = manager_with("");
+        let line: Line = em.into();
+        assert!(string_representation(&line).is_empty());
+    }
+
+    #[test]
+    fn comment_only() {
+        let em = manager_with("(this is a comment)");
+        let line: Line = em.into();
+        assert_eq!(
+            string_representation(&line),
+            "(this is a comment)".to_string(),
+        );
+    }
+
+    #[test]
+    fn semicolon_comment_only() {
+        let em = manager_with("; comment");
+        let line: Line = em.into();
+        assert_eq!(
+            string_representation(&line),
+            "; comment".to_string(),
+        );
+    }
+
+    #[test]
+    fn grbl_parameter_line_without_comment() {
+        let em = manager_with("$H");
+        let line: Line = em.into();
+        assert_eq!(
+            string_representation(&line),
+            "$H".to_string(),
+        );
+    }
+
+    #[test]
+    fn grbl_parameter_line_with_comment() {
+        let em = manager_with("$X=10 (set x)");
+        let line: Line = em.into();
+        assert_eq!(
+            string_representation(&line),
+            "$X=10 (set x)".to_string(),
+        );
+    }
+
+   
+   #[test]
+    fn any_line_written_is_rendered() {
+        let em = manager_with("hello world");
+        let line: Line = em.into();
+        assert_eq!(
+            string_representation(&line),
+            "hello world".to_string(),
+        );
     }
 }
