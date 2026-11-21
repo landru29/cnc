@@ -5,13 +5,27 @@ mod serial;
 mod history;
 mod frontend;
 
+use std::{
+    sync::{
+        Arc,
+        atomic::AtomicBool,
+    },
+};
+
+
 use anyhow::Result;
 use application::routing::Channels;
 use clap::Parser;
-use application::application::{Application, ThreadedApp};
+use application::{
+    application::Application,
+    thread::ThreadedApp,
+};
 use grbl::program::Program;
 use logging::Logger;
 use sys_locale::get_locale;
+use log::info;
+use simplelog::{Config, LevelFilter, WriteLogger};
+use std::fs::File;
 
 use crate::grbl::helper::{Helper, Lang};
 
@@ -36,7 +50,14 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let logger = cli.log_file.as_deref().map(Logger::new).transpose()?;
+    if let Some(log_file) = cli.log_file {
+        WriteLogger::init(
+            LevelFilter::Info,
+            Config::default(),
+            File::create(log_file).expect("impossible de créer app.log"),
+        )
+        .expect("logger déjà initialisé");
+    }
 
     let lang: Lang = if cli.lang != "" {
         Lang::from(cli.lang)
@@ -54,15 +75,17 @@ fn main() -> Result<()> {
     } else {
         let filename = cli.extras[0].clone();
         println!("Filename : {}", filename);
-        Some(Program::open(filename, logger.clone())?)
+        Some(Program::open(filename)?)
     };
+
+    let running = Arc::new(AtomicBool::new(true));
 
     // Open serial port.
     let mut serial_client = serial::connection::Client::new(
         &cli.port,
         cli.baudrate,
         std::time::Duration::from_millis(100),
-        logger.clone(),
+        running.clone(),
     )?;
     serial_client.start()?;
 
@@ -76,10 +99,10 @@ fn main() -> Result<()> {
 
     // Create UI
     let mut ui = ThreadedApp::new();
-    let mut frontend = Application::new(program, cli.port, logger.clone(), command_helper);
+    let mut frontend = Application::new(program, cli.port, command_helper, running.clone());
     let frontend_command_rx = frontend.take_command_receiver()?;
     let frontend_tx = frontend.tx.clone();
-    ui.start(frontend)?;
+    ui.start(frontend, running.clone())?;
 
     Channels::new(
         serial_client.take_receiver()?,

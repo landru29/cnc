@@ -7,14 +7,12 @@ use ratatui::{
 
 use super::status::BufferStatus;
 
-use crate::logging::Logger;
-use crate::logging::Level as LogLevel;
+use log::info;
 use regex::Regex;
 
 #[derive(Clone)]
 pub struct Program {
     code: Vec<String>,
-    logger: Option<Logger>,
     pub cursor: usize, // last line in machine buffer
     pub eop_reached_in_machine_buffer: bool, // End Of Program
     machine_buffer_size: Option<usize>,
@@ -35,24 +33,14 @@ pub fn commented_line(line: String) -> (String, String) {
 }
 
 impl Program {
-    pub fn new(data: Vec<String>, logger: Option<Logger>) -> Self {
+    pub fn new(data: Vec<String>) -> Self {
         Self{
             code: data,
-            logger,
             cursor: 0,
             eop_reached_in_machine_buffer: false,
             machine_buffer_size: None,
             data_sent: vec![],
             running: false,
-        }
-    }
-
-    fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
-        if let Some(logger) = &self.logger {
-            let message = format!("[PROGRAM] {}", msg);
-            if let Err(log_error) = logger.log(level, &message) {
-                eprintln!("Failed to write frontend error to log file: {log_error}");
-            }
         }
     }
 
@@ -63,16 +51,16 @@ impl Program {
         };
     }
 
-    pub fn open(filename: String, logger: Option<Logger>) -> Result<Self> {
+    pub fn open(filename: String) -> Result<Self> {
         let file_content = std::fs::read_to_string(filename)?;
 
         let gcode: Vec<String> = file_content.lines().map(str::to_owned).collect();
 
-        Ok(Self::new(gcode, logger))
+        Ok(Self::new(gcode))
     }
 
     fn lines(&self, current: usize, count: usize, max_bytes: usize) -> Result<Vec<usize>> {
-        self.log(LogLevel::Info, format!("collecting lines with current: {}, count: {}, max_bytes: {}", current, count, max_bytes));
+        info!("collecting lines with current: {}, count: {}, max_bytes: {}", current, count, max_bytes);
         let mut output: Vec<usize> = vec![];
         if current >= self.code.len() {
             return Err(anyhow::anyhow!("end of program reached"));
@@ -117,7 +105,7 @@ impl Program {
             }
         }
 
-        self.log(LogLevel::Info, format!("collected lines: {:?}", output));
+        info!("collected lines: {:?}", output);
 
         Ok(output)
     }
@@ -184,7 +172,6 @@ impl Program {
         let end = (start + height).min(len);
         
         let buffer = if machine_buffer_length>0 {
-            self.log(LogLevel::Info, format!("$$$$$$ current command line : {}", machine_buffer.first().unwrap_or(&start)));
             Some((
                 *(machine_buffer.first().unwrap_or(&start)),
                 *(machine_buffer.last().unwrap_or(&start))

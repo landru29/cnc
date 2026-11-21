@@ -1,5 +1,5 @@
 use std::fmt;
-use std::ops::Add;
+use std::ops::{Add, Sub, SubAssign};
 
 use ratatui::{
     style::{Color, Style}, text::{Line, Span},
@@ -104,6 +104,8 @@ impl<'a> Into<Span<'a>> for Delta {
     }
 }
 
+
+
 impl Add for Position {
     type Output = Self;
 
@@ -112,9 +114,46 @@ impl Add for Position {
             x: self.x + other.x,
             y: self.y + other.y,
             z: self.z + other.z,
-            dx: Delta::new(self.x, other.x),
-            dy: Delta::new(self.y, other.y),
-            dz: Delta::new(self.z, other.z),
+            dx: self.dx + other.dx,
+            dy: self.dy + other.dy,
+            dz: self.dz + other.dz,
         }
+    }
+}
+
+impl Sub for Position {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+            dx: self.dx - other.dx,
+            dy: self.dy - other.dy,
+            dz: self.dz - other.dz,
+        }
+    }
+}
+
+impl SubAssign for Position {
+    fn sub_assign(&mut self, other: Self) {
+        *self = self.clone() - other;
+    }
+}
+
+impl Add for Delta {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self(self.0 + other.0)
+    }
+}
+
+impl Sub for Delta {
+    type Output = Self;
+
+    fn sub(self, other: Self) -> Self {
+        Self(self.0 - other.0)
     }
 }

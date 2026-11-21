@@ -5,8 +5,7 @@ use std::time::Duration;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use super::feedback::Feedback;
 
-use crate::logging::Logger;
-use crate::logging::Level as LogLevel;
+use log::{info, error};
 
 
 pub struct Client {
@@ -17,14 +16,13 @@ pub struct Client {
     pub handle: Option<JoinHandle<()>>,
     command_rx: Option<Receiver<String>>,
     serial_tx: Sender<Feedback>,
-    logger: Option<Logger>,
     path: String,
     baudrate: u32,
     timeout: Duration,
 }
 
 impl Client {
-    pub fn new(path: &str, baudrate: u32, timeout: Duration, logger: Option<Logger>) -> Result<Self> {
+    pub fn new(path: &str, baudrate: u32, timeout: Duration, running: Arc<AtomicBool>) -> Result<Self> {
         let (serial_tx, rx) = channel::<Feedback>();
         let (tx, command_rx) = channel::<String>();
 
@@ -36,24 +34,14 @@ impl Client {
             rx: Some(rx),
             tx,
             port: Some(port),
-            running: Arc::new(AtomicBool::new(true)),
+            running,
             handle: None,
             command_rx: Some(command_rx),
             serial_tx,
-            logger,
             path: path.to_string(),
             baudrate,
             timeout,
         })
-    }
-
-    fn log(logger: Option<&Logger>, level: LogLevel, msg: impl std::fmt::Display) {
-        if let Some(logger) = logger {
-            let message = format!("[SERIAL] {}", msg);
-            if let Err(log_error) = logger.log(level, &message) {
-                eprintln!("Failed to write frontend error to log file: {log_error}");
-            }
-        }
     }
 
     pub fn take_receiver(&mut self) -> Result<Receiver<Feedback>> {
@@ -71,7 +59,6 @@ impl Client {
         };
         let mut port = port.try_clone()?;
         let running_thread = Arc::clone(&self.running);
-        let logger = self.logger.clone();
         let path = self.path.clone();
         let baudrate = self.baudrate;
         let timeout = self.timeout;
@@ -92,10 +79,10 @@ impl Client {
                             data_to_send.push('\n');
                         }
 
-                        Self::log(logger.as_ref(), LogLevel::Info, format!(">>> Sending command to serial port: {}", data_to_send.trim_end()));
+                        info!(">>> Sending command to serial port: {}", data_to_send.trim_end());
 
                         if let Err(e) = port.write_all(data_to_send.as_bytes()) {
-                            Self::log(logger.as_ref(), LogLevel::Error, format!("Error writing to serial port: {}", e));
+                            error!("Error writing to serial port: {}", e);
                             connected = false;
                             break;
                         }
@@ -117,14 +104,14 @@ impl Client {
 
                                     match line.parse::<Feedback>() {
                                         Ok(feedback) => {
-                                            Self::log(logger.as_ref(), LogLevel::Info, format!("<<< Received data from serial port: {}", feedback));
+                                            info!("<<< Received data from serial port: {}", feedback);
 
                                             if let Err(e) = serial_tx.send(feedback) {
                                                 eprintln!("Error sending data: {}", e);
                                             }
                                         },
                                         Err(e) => {
-                                            Self::log(logger.as_ref(), LogLevel::Error, format!("Error parsing feedback from serial port: {}", e));
+                                            error!("Error parsing feedback from serial port: {}", e);
                                         }
                                     };
                                 }
@@ -132,7 +119,7 @@ impl Client {
                         }
                         Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
                         Err(e) => {
-                            Self::log(logger.as_ref(), LogLevel::Error, format!("Connection to serial port lost: {}", e));
+                            error!("Connection to serial port lost: {}", e);
                             connected = false;
                         }
                     }
@@ -143,7 +130,7 @@ impl Client {
                 }
 
                 // Attempt to reconnect.
-                Self::log(logger.as_ref(), LogLevel::Info, "Attempting to reconnect to serial port...");
+                info!("Attempting to reconnect to serial port...");
                 loop {
                     if !running_thread.load(Ordering::Relaxed) {
                         break;
@@ -151,13 +138,13 @@ impl Client {
 
                     match serialport::new(&path, baudrate).timeout(timeout).open() {
                         Ok(new_port) => {
-                            Self::log(logger.as_ref(), LogLevel::Info, "Reconnected to serial port");
+                            info!("Reconnected to serial port");
                             port = new_port;
                             line_buffer = BufferedData::new();
                             break;
                         }
                         Err(e) => {
-                            Self::log(logger.as_ref(), LogLevel::Error, format!("Reconnect failed: {}", e));
+                            error!("Reconnect failed: {}", e);
                             std::thread::sleep(Duration::from_secs(1));
                         }
                     }

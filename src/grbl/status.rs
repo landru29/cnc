@@ -152,11 +152,17 @@ pub struct RealTime {
 impl RealTime {
     pub fn position(&self) -> Position {
         if let Some(pos) = &self.machine_position {
-            return pos.clone();
-        }
+            let mut output = pos.clone();
 
-        if let Some(wpos) = &self.work_position && let Some(offset) = &self.work_coordinate_offset {
-            return wpos.clone() + offset.clone();
+            if let Some(offset) = &self.work_coordinate_offset {
+                output -= offset.clone();
+            }
+
+            if let Some(wpos) = &self.work_position {
+                output -= wpos.clone();
+            }
+
+            return output;
         }
 
         Position::default()

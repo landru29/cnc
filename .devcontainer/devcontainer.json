@@ -20,9 +20,12 @@
 			},
 			// Add the IDs of extensions you want installed when the container is created.
 			"extensions": [
-				"vadimcn.vscode-lldb",
-				"rust-lang.rust-analyzer"
-			]
+        "vadimcn.vscode-lldb",
+        "rust-lang.rust-analyzer",
+        "ms-vscode.makefile-tools",
+		"tamasfe.even-better-toml",
+		"fill-labs.dependi",
+      ]
 		}
 	}
 }

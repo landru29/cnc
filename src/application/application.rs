@@ -5,7 +5,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread::JoinHandle,
     sync::mpsc::{
         Receiver,
         Sender,
@@ -32,6 +31,8 @@ use super::{
     machine::MachineData,
 };
 
+use log::{info, error};
+
 pub struct Application {
     gcode: Option<Program>,
     to_cnc: Vec<MachineData>,
@@ -42,26 +43,18 @@ pub struct Application {
     rx: Option<Receiver<Feedback>>,
     command_rx: Option<Receiver<String>>,
     running: Arc<AtomicBool>,
-    logger: Option<Logger>,
     command_helper: Helper,
     cursor_position: u16,
 }
 
-pub struct ThreadedApp {
-    handle: Option<JoinHandle<Frontend>>,
-    terminal: Option<Frontend>,
-}
+
 
 impl Application {
-    pub fn new(gcode: Option<Program>, description: String, logger: Option<Logger>, command_helper: Helper) -> Self {
+    pub fn new(gcode: Option<Program>, description: String, command_helper: Helper, running: Arc<AtomicBool>) -> Self {
         let (tx, rx) = channel::<Feedback>();
         let (command_tx, command_rx) = channel::<String>();
 
-        if let Some(log) = &logger {
-            if let Err(log_error) = log.log(LogLevel::Info, "Starting frontend") {
-                eprintln!("Failed to write frontend error to log file: {log_error}");
-            }
-        }
+        info!("Starting frontend");
 
         Self {
             // program_running: false,
@@ -73,28 +66,18 @@ impl Application {
             command_tx,
             rx: Some(rx),
             command_rx: Some(command_rx),
-            running: Arc::new(AtomicBool::new(true)),
-            logger,
+            running,
             command_helper,
             cursor_position: 0,
-        }
-    }
-
-    fn log(&self, level: LogLevel, msg: impl std::fmt::Display) {
-        if let Some(logger) = &self.logger {
-            let message = format!("[APP] {msg}");
-            if let Err(log_error) = logger.log(level, &message) {
-                eprintln!("Failed to write frontend error to log file: {log_error}");
-            }
         }
     }
 
     fn send_command(
         to_cnc: Option<&mut Vec<MachineData>>,
         command_tx: &Sender<String>,
-        logger: Option<&Logger>,
         cmd: String,
     ) -> AnyhowResult<()> {
+        let command = cmd.clone();
         if !cmd.is_empty() {
             if cmd.to_lowercase() == "exit" || cmd.to_lowercase() == "quit" {
                 anyhow::bail!("Exiting application")
@@ -103,11 +86,8 @@ impl Application {
                     echo.push(MachineData::ToMachine(format!("{cmd}")));
                 }
                 if let Err(error) = command_tx.send(cmd) {
-                    if let Some(logger) = logger {
-                        if let Err(log_error) = logger.log(LogLevel::Error, &error) {
-                            eprintln!("Failed to write frontend error to log file: {log_error}");
-                        }
-                    }
+                    error!("could not send command {}: {}", command, error);
+
                     return Err(error.into());
                 }
             }
@@ -131,7 +111,6 @@ impl Application {
                         Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
-                            self.logger.as_ref(),
                             cmd,
                         )?;
                     },
@@ -142,7 +121,6 @@ impl Application {
                             Self::send_command(
                                 Some(&mut self.to_cnc),
                                 &self.command_tx,
-                                self.logger.as_ref(),
                                 cmd.clone(),
                             )?;
                         }
@@ -153,7 +131,7 @@ impl Application {
                                 State::Idle => {
                                     let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
                                     prog.running = true;
-                                    self.log(LogLevel::Info, "================= Starting program execution =================");
+                                    info!("================= Starting program execution =================");
                                 }
                                 _ => {},
                             };
@@ -165,7 +143,6 @@ impl Application {
                         Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
-                            self.logger.as_ref(),
                             "!".to_string(),
                         )?;
                     },
@@ -173,7 +150,6 @@ impl Application {
                         Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
-                            self.logger.as_ref(),
                             "$GB".to_string(),
                         )?;
                     },
@@ -181,7 +157,6 @@ impl Application {
                         Self::send_command(
                             Some(&mut self.to_cnc),
                             &self.command_tx,
-                            self.logger.as_ref(),
                             "~".to_string(),
                         )?;
                     },
@@ -195,7 +170,6 @@ impl Application {
                         Self::send_command(
                             None,
                             &self.command_tx,
-                            self.logger.as_ref(),
                             Self::ctrl_x(),
                         )?;
                     },
@@ -206,7 +180,6 @@ impl Application {
                         Self::send_command(
                             None,
                             &self.command_tx,
-                            self.logger.as_ref(),
                             "$BYE".to_string(),
                         )?;
                     },
@@ -236,7 +209,7 @@ impl Application {
 
         let buffer_lines = buffer.lines;
         let buffer_bytes = buffer.bytes;
-        self.log(LogLevel::Info, format!("Buffer: {} lines / {} bytes", buffer_lines, buffer_bytes));
+        info!("Buffer: {} lines / {} bytes", buffer_lines, buffer_bytes);
 
         let commands = {
             let prog = self.gcode.as_mut().ok_or(anyhow::anyhow!("missing program"))?;
@@ -252,7 +225,7 @@ impl Application {
             match prog.process(&buffer) {
                 Ok(data) => data,
                 Err(error) => {
-                    self.log(LogLevel::Error, error);
+                    error!("program processing: {}", error);
                     return Ok(());
                 }
             }
@@ -261,11 +234,10 @@ impl Application {
         for command in commands {
             let command_text = command.clone();
             self.to_cnc.push(MachineData::ToMachine(command_text.clone()));
-            self.log(LogLevel::Info, format!(" ({}) >> {}", command_text.len(), command_text));
+            info!(" ({}) >> {}", command_text.len(), command_text);
             if Self::send_command(
                 None,
                 &self.command_tx,
-                self.logger.as_ref(),
                 command_text.clone(),
             )
             .is_err()
@@ -280,13 +252,13 @@ impl Application {
         Ok(())
     }
 
-    fn run_iteration(&mut self, frontend: &mut Frontend) -> AnyhowResult<()> {
+    pub fn run_iteration(&mut self, frontend: &mut Frontend) -> AnyhowResult<()> {
         let program_running = self.gcode.as_ref().map(|prog| prog.running).unwrap_or(false);
 
         while let Ok(line) = self.rx.as_ref().unwrap().try_recv() {
             match line {
                 Feedback::Status(status) => {
-                    self.log(LogLevel::Info, "Received status update from GRBL");
+                    info!("Received status update from GRBL");
                     match status {
                         Status::RealTime(status) => {
                             self.machine_configuration = self.machine_configuration.clone() + status;
@@ -294,18 +266,18 @@ impl Application {
                             self.process_program()?;
                         }
                         Status::Error(code) => {
-                            self.log(LogLevel::Error, format!("GRBL reported error:{code}"));
+                            error!("GRBL reported error:{code}");
                             self.to_cnc.push(MachineData::FromMachine(format!("!ERROR! {code}. Type '$X'")));
                         }
                         Status::Alarm(code) => {
-                            self.log(LogLevel::Error, format!("GRBL reported ALARM:{code}"));
+                            error!("GRBL reported ALARM:{code}");
                             self.to_cnc.push(MachineData::FromMachine(format!("!ALARM! {code}. Type '$X'")));
                         }
                         _ => {}
                     };
                 },
                 Feedback::MachineConfig(machine_config) => {
-                    self.log(LogLevel::Info, "Received machine configuration update from GRBL");
+                    info!("Received machine configuration update from GRBL");
                     self.machine_configuration = self.machine_configuration.clone() + machine_config;
                 },
                 Feedback::Ok => {
@@ -326,7 +298,7 @@ impl Application {
             &self.command_helper,
             &program_running,
         ).map_err(|e| {
-            self.log(LogLevel::Error, &e);
+            error!("frontend error: {}", &e);
             self.running.store(false, Ordering::Relaxed);
 
             anyhow::anyhow!("display error: {}", &e)
@@ -336,50 +308,10 @@ impl Application {
         
         Ok(())
     }
-}
 
-impl ThreadedApp {
-    pub fn new() -> Self {
-        Self { handle: None, terminal: None }
-    }
-
-    pub fn start(&mut self, mut app: Application) -> AnyhowResult<()> {
-        if self.handle.is_some() {
-            anyhow::bail!("Application UI has already been started");
-        }
-        let running = Arc::clone(&app.running);
-
-        let mut frontend = Frontend::new()?;
-
-        self.handle = Some(std::thread::spawn(move || {
-            while running.load(Ordering::Relaxed) {
-                if app.run_iteration(&mut frontend).is_err() {
-                    break;
-                }
-            }
-            frontend
-        }));
-
-        Ok(())
-    }
-}
-
-impl Application {
     fn ctrl_x() -> String {
         format!("{}", 0x18 as char)
     }
 }
 
-impl ThreadedApp {
-    pub fn wait(&mut self) -> AnyhowResult<()> {
-        if let Some(handle) = self.handle.take() {
-            self.terminal = Some(handle
-                .join()
-                .map_err(|_| anyhow::anyhow!("UI thread panicked"))?);
-        }
 
-        self.terminal.as_mut().unwrap().leave()?;
-
-        Ok(())
-    }
-}
