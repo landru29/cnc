@@ -135,6 +135,27 @@ impl fmt::Display for Overrides {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AccessoryState {
+    Spindleclockwise,
+    SpindleCounterClockwise,
+    FloodCoulant,
+    MistCoulant,
+}
+
+impl fmt::Display for AccessoryState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "A:{}",
+            match self {
+                Self::Spindleclockwise => "S",
+                Self::SpindleCounterClockwise => "C",
+                Self::FloodCoulant => "F",
+                Self::MistCoulant => "M",
+            }
+    )
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RealTime {
@@ -147,6 +168,7 @@ pub struct RealTime {
     pub feed_speed: Option<FeedSpeed>,
     pub overrides: Option<Overrides>,
     pub step_mode: Mode,
+    pub accessory_state: Option<AccessoryState>,
 }
 
 impl RealTime {
@@ -275,7 +297,8 @@ impl Add for RealTime {
             buffer: if other.buffer == None {self.buffer} else {other.buffer},
             feed_speed: if other.feed_speed == None {self.feed_speed} else {other.feed_speed},
             overrides: if other.overrides == None {self.overrides} else {other.overrides},
-            step_mode:other.step_mode,
+            step_mode: other.step_mode,
+            accessory_state: other.accessory_state,
         }
     }
 }
@@ -293,6 +316,7 @@ impl Default for RealTime {
             feed_speed: None,
             overrides: None,
             step_mode: Mode::Program,
+            accessory_state: None,
         }
     }
 }
@@ -317,6 +341,14 @@ impl FromStr for RealTime {
 
             if let Some(coords) = part.strip_prefix("MPos:") {
                 rt.machine_position = Some(parse_coords(coords)?);
+            } else if let Some(acessory_state) = part.strip_prefix("A:") {
+                rt.accessory_state = match acessory_state {
+                    "S" => Some(AccessoryState::Spindleclockwise),
+                    "C" => Some(AccessoryState::SpindleCounterClockwise),
+                    "F" => Some(AccessoryState::FloodCoulant),
+                    "M" => Some(AccessoryState::MistCoulant),
+                    _ => None,
+                }
             } else if let Some(coords) = part.strip_prefix("WPos:") {
                 rt.work_position = Some(parse_coords(coords)?);
             } else if let Some(coords) = part.strip_prefix("WCO:") {
@@ -446,6 +478,7 @@ mod tests {
                 feed_speed: None,
                 overrides: None,
                 step_mode: Mode::Program,
+                accessory_state: None,
             }
         );
     }
@@ -487,6 +520,7 @@ mod tests {
                 feed_speed: None,
                 overrides: None,
                 step_mode: Mode::Program,
+                accessory_state: None,
             }
         ));
     }
@@ -531,6 +565,7 @@ mod tests {
                 feed_speed: None,
                 overrides: None,
                 step_mode: Mode::Program,
+                accessory_state: None,
             }
         ));
 
